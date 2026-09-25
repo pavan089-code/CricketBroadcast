@@ -130,6 +130,7 @@ dist/
 # Cloudflare Worker
 .wrangler/
 worker/.dev.vars
+worker/wrangler.toml.backup
 
 # Match recordings used for highlight detection. Large, and this repo is public.
 test video/

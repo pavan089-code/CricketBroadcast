@@ -1,0 +1,23 @@
+[[redirects]]
+  from = "/api/cricclubs/*"
+  to = "https://overlay-analytics.23eg107d09.workers.dev/api/cricclubs/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/collect"
+  to = "https://overlay-analytics.23eg107d09.workers.dev/api/collect"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/stats/*"
+  to = "https://overlay-analytics.23eg107d09.workers.dev/stats/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/stats"
+  to = "https://overlay-analytics.23eg107d09.workers.dev/stats"
+  status = 200
+  force = true

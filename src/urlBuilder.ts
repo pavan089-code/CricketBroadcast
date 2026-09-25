@@ -16,17 +16,16 @@ export interface OverlayLinkParams {
     opponentLogo?: string;
     sponsor?: string;
     quiet?: boolean;
+    view?: 'scorebug' | 'scorecard';
 }
 
-/**
- * Builds the overlay URL for the given match. Omits parameters that equal their defaults so the
- * link stays short. `base` defaults to the current page (origin + path, no query).
- */
-export function buildOverlayUrl({ matchId, leagueId, clubId, theme, ...options }: OverlayLinkParams, base: { origin: string; pathname: string } = window.location): string {
+/** Backward-compatible URL builder; view is only emitted when explicitly requested. */
+export function buildOverlayUrl({ matchId, leagueId, clubId, theme, view, ...options }: OverlayLinkParams, base: { origin: string; pathname: string } = window.location): string {
     const params = new URLSearchParams();
     params.set('matchId', matchId.trim());
     const resolvedLeagueId = (leagueId ?? clubId ?? '').trim();
     if (resolvedLeagueId) params.set('leagueId', resolvedLeagueId);
+    if (view) params.set('view', view);
     const resolved = resolveTheme(theme);
     if (resolved !== DEFAULT_THEME) params.set('theme', resolved);
     if (options.title?.trim()) params.set('title', options.title.trim().slice(0, 100));
@@ -45,18 +44,18 @@ export function themeLabel(theme: ThemeName): string {
     return theme.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-/**
- * Wires the "Build your overlay link" form on the home screen: theme options, live URL, copy
- * button and the sample-data preview link.
- */
+/** Wires match validation and the independent scorebug / scorecard links. */
 export function setupUrlBuilder() {
     const matchInput = document.getElementById('build-match-id') as HTMLInputElement | null;
     const clubInput = document.getElementById('build-club-id') as HTMLInputElement | null;
     const themeSelect = document.getElementById('build-theme') as HTMLSelectElement | null;
-    const output = document.getElementById('build-url') as HTMLOutputElement | null;
-    const copyButton = document.getElementById('build-copy') as HTMLButtonElement | null;
-    const preview = document.getElementById('build-preview') as HTMLAnchorElement | null;
-    if (!matchInput || !clubInput || !themeSelect || !output || !copyButton || !preview) return;
+    const links = (['scorebug', 'scorecard'] as const).map(view => ({
+        view,
+        output: document.getElementById(`${view}-url`) as HTMLOutputElement | null,
+        copy: document.getElementById(`${view}-copy`) as HTMLButtonElement | null,
+        preview: document.getElementById(`${view}-preview`) as HTMLAnchorElement | null,
+    }));
+    if (!matchInput || !clubInput || !themeSelect || links.some(link => !link.output || !link.copy || !link.preview)) return;
 
     for (const theme of AVAILABLE_THEMES) {
         const option = document.createElement('option');
@@ -70,9 +69,7 @@ export function setupUrlBuilder() {
     const connect = document.getElementById('connect-match') as HTMLButtonElement | null;
     const status = document.getElementById('connection-status');
     const summary = document.getElementById('connected-match');
-    const generate = document.getElementById('build-generate') as HTMLButtonElement | null;
     let validated = false;
-    let generated = false;
     let busy = false;
     let retry = false;
     let revision = 0;
@@ -83,33 +80,30 @@ export function setupUrlBuilder() {
 
     const render = () => {
         const matchId = matchInput.value.trim();
-        const url = buildOverlayUrl({ matchId, leagueId: clubInput.value, theme: themeSelect.value,
-            title: optionValue('title'), color: optionValue('color'), teamLogo: optionValue('teamLogo'),
-            opponentLogo: optionValue('opponentLogo'), sponsor: optionValue('sponsor'),
-            quiet: (document.getElementById('build-quiet') as HTMLInputElement | null)?.checked });
-        output.textContent = generated ? url : 'Connect your match, then generate your OBS URL.';
-        output.dataset.state = generated ? 'ready' : 'incomplete';
-        copyButton.disabled = !generated;
-        if (generate) generate.disabled = !validated;
+        for (const link of links) {
+            const url = buildOverlayUrl({ matchId, leagueId: clubInput.value, theme: themeSelect.value, view: link.view,
+                title: optionValue('title'), color: optionValue('color'), teamLogo: optionValue('teamLogo'),
+                opponentLogo: optionValue('opponentLogo'), sponsor: optionValue('sponsor'),
+                quiet: (document.getElementById('build-quiet') as HTMLInputElement | null)?.checked });
+            link.output!.textContent = validated ? url : 'Connect your match to generate this URL.';
+            link.output!.dataset.state = validated ? 'ready' : 'incomplete';
+            link.copy!.disabled = !validated;
+            link.preview!.href = validated ? url : '#';
+            link.preview!.setAttribute('aria-disabled', String(!validated));
+            link.preview!.tabIndex = validated ? 0 : -1;
+            link.preview!.style.pointerEvents = validated ? '' : 'none';
+        }
         if (connect) connect.disabled = busy || !(urlInput?.value.trim() || matchId);
-        preview.href = validated && urlInput ? url : `?debug=1&theme=${encodeURIComponent(themeSelect.value)}`;
-        if (urlInput) preview.textContent = validated ? 'Preview connected overlay' : 'Preview with sample data';
     };
-
-    const configurationChanged = () => {
-        generated = false;
-        if (validated && status) status.textContent = 'Match validated. Generate your OBS URL when ready.';
-        render();
-    };
-    themeSelect.addEventListener('change', configurationChanged);
-    render();
-    for (const key of ['title', 'color', 'teamLogo', 'opponentLogo', 'sponsor', 'quiet']) {
-        document.getElementById(`build-${key}`)?.addEventListener('input', configurationChanged);
+    themeSelect.addEventListener('change', render);
+    for (const key of ['title', 'color', 'teamLogo', 'opponentLogo', 'sponsor']) {
+        document.getElementById(`build-${key}`)?.addEventListener('input', render);
     }
+    document.getElementById('build-quiet')?.addEventListener('change', render);
+    render();
     for (const input of [urlInput, matchInput, clubInput]) input?.addEventListener('input', () => {
         revision++;
         validated = false;
-        generated = false;
         if (status) status.textContent = 'Connect the match to validate this link.';
         if (summary) summary.textContent = '';
         render();
@@ -118,7 +112,6 @@ export function setupUrlBuilder() {
         if (busy) return;
         const attempt = ++revision;
         validated = false;
-        generated = false;
         busy = true;
         connect.textContent = retry ? 'Retrying…' : 'Connecting…';
         if (status) status.textContent = retry ? 'Retrying your connection…' : 'Connecting to your match…';
@@ -150,7 +143,7 @@ export function setupUrlBuilder() {
             if (attempt !== revision) return;
             validated = true;
             retry = false;
-            if (status) status.textContent = 'Match validated. Choose your options, then generate your OBS URL.';
+            if (status) status.textContent = 'Match validated. Copy either overlay URL or preview it.';
             if (summary) summary.textContent = `${state.match.team1} vs ${state.match.team2} · ${state.innings.battingTeam} ${state.innings.runs}/${state.innings.wickets} (${state.innings.overs} ov)${state.match.status ? ` · ${state.match.status}` : ''}`;
         } catch (error) {
             if (attempt !== revision) return;
@@ -175,26 +168,25 @@ export function setupUrlBuilder() {
         event.preventDefault();
         connect?.click();
     });
-    generate?.addEventListener('click', () => {
-        if (!validated) return;
-        generated = true;
-        if (status) status.textContent = 'Your OBS URL is ready. Copy it into an OBS Browser Source.';
-        render();
+    for (const link of links) link.preview!.addEventListener('click', event => {
+        if (!validated) event.preventDefault();
     });
-
-    copyButton.addEventListener('click', async () => {
-        if (!validated || !generated) return;
+    for (const link of links) link.copy!.addEventListener('click', async () => {
+        if (!validated) return;
         if (!matchInput.value.trim()) {
             showToast('Enter a match ID first.', 'error');
             matchInput.focus();
             return;
         }
         try {
-            await navigator.clipboard.writeText(output.textContent ?? '');
+            await navigator.clipboard.writeText(link.output!.textContent ?? '');
+            const previousLabel = link.copy!.textContent;
+            link.copy!.textContent = 'Copied!';
+            window.setTimeout(() => { link.copy!.textContent = previousLabel; }, 1800);
             if (status) status.textContent = 'URL copied. Add it to OBS as a Browser Source at 1920 × 1080 or 1280 × 720.';
-            showToast('Overlay link copied.', 'success');
+            showToast(`${link.view === 'scorebug' ? 'Scorebug' : 'Full scorecard'} URL copied.`, 'success');
         } catch {
-            showToast('Copy failed. Select the link and copy it manually.', 'error');
+            showToast('Copy failed. Select the URL and copy it manually.', 'error');
         }
     });
 }

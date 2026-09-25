@@ -97,6 +97,14 @@ describe('loadImage', () => {
 });
 
 describe('getQueryParams', () => {
+    it.each(['scorebug', 'scorecard'] as const)('reads the %s view without changing other routing inputs', view => {
+        mockLocationSearch(`?matchId=m&leagueId=l&view=${view}`);
+        expect(getQueryParams()).toMatchObject({ matchId: 'm', leagueId: 'l', view });
+    });
+    it('keeps an absent view absent for legacy URLs', () => {
+        mockLocationSearch('?matchId=m');
+        expect(getQueryParams().view).toBeNull();
+    });
     // Helper to mock window.location.search
     const mockLocationSearch = (search: string) => {
         Object.defineProperty(window, 'location', {

@@ -82,7 +82,11 @@ describe('current CricClubs adapter', () => {
     });
     it('passes tournament context through to the scorebug', () => {
         const state = normaliseMatchState('m', {data:{...matchInfo.data,seriesName:'Summer Cup'}}, commentary);
-        expect(matchStateToOverlayData(state).values.customTextValue).toContain('Summer Cup');
+        const context = matchStateToOverlayData(state).values.customTextValue;
+        expect(context).toContain('Summer Cup');
+        expect(context).toContain('Hyderabad Warriors');
+        expect(context).toContain('Rajasthan Royals');
+        expect(context).toContain('Innings 1');
     });
     it('uses a bounded request and rejects timeout failures', async () => {
         const timeout = vi.spyOn(AbortSignal, 'timeout');
@@ -139,6 +143,55 @@ describe('current CricClubs adapter', () => {
         expect(state.currentOver.map(ball => ball.id)).toEqual(['first', 'second', 'third']);
         expect(state.lastBall?.id).toBe('third');
         expect(state.event).toEqual({ type: 'FOUR', ballId: 'third' });
+        expect(state.scorecard[0]).toMatchObject({
+            number: 1, battingTeam: 'Hyderabad Warriors', runs: 12, wickets: 0, overs: '0.3',
+            bowling: [{ name: 'Kedar Nelalu', overs: '0.3', runs: 12, wickets: 0, economy: 24 }],
+        });
+        expect(state.scorecard[0].batting).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Pavan Ch', runs: 12, balls: 3, fours: 1, sixes: 1, strikeRate: 400, striker: true })]));
+    });
+
+    it('retains the completed first-innings summary when deliveries start in innings two', () => {
+        const chase = structuredClone(commentary);
+        Object.assign(chase.data, {
+            innings2Balls: {
+                teamName: 'Rajasthan Royals', teamId: 'rr', rcb: '3/0', overs: '0.1',
+                oversMap: { Over0: { rcb: '3/0', balls: [{ ballId: 'chase-1', over: 0, ball: 1, ballType: 'Good Ball', runs: 3, runsDisplay: '3', striker: 'rr-batter', strikerName: 'Very Long Rajasthan Batter Name', bowler: 'rr-bowler', bowlerName: 'Hyderabad Bowler', outMethod: 'Not Out' }] } },
+            },
+            latestBatting: { batsman1: { playerID: 'rr-batter', playerName: 'Very Long Rajasthan Batter Name', runsScored: 3, ballsFaced: 1, fours: 0, sixers: 0 } },
+            latestBowling: { bowler1: { playerID: 'rr-bowler', playerName: 'Hyderabad Bowler', balls: 1, runs: 3, wickets: 0, overs: '0.1' } },
+        });
+        const state = normaliseMatchState('match', matchInfo, chase);
+        expect(state.innings).toMatchObject({ number: 2, battingTeam: 'Rajasthan Royals', runs: 3, overs: '0.1' });
+        expect(state.scorecard).toHaveLength(2);
+        expect(state.scorecard[0]).toMatchObject({ number: 1, battingTeam: 'Hyderabad Warriors', runs: 12, completed: true });
+        expect(state.scorecard[1]).toMatchObject({ number: 2, battingTeam: 'Rajasthan Royals', runs: 3, completed: false });
+        expect(state.scorecard[1].batting[0].name).toBe('Very Long Rajasthan Batter Name');
+        expect(state.scorecard[1].bowling[0]).toMatchObject({ name: 'Hyderabad Bowler', balls: 1, runs: 3 });
+    });
+
+    it('normalizes dismissal and extras from delivery fields, and omits unavailable innings fields', () => {
+        const values = structuredClone(commentary);
+        Object.assign(values.data, { latestBatting: undefined, latestBowling: undefined });
+        const base = values.data.innings1Balls.oversMap.Over0.balls[0];
+        const wide = Object.assign({}, base, { ballId: 'wide', ball: 2, ballType: 'Wide', runs: 2, runsDisplay: '2wd' });
+        const out = Object.assign({}, base, { ballId: 'out', ball: 1, runs: 0, runsDisplay: 'W', outPerson: 'pavan-id', outMethod: 'Bowled' });
+        Object.assign(values.data.innings1Balls.oversMap.Over0, { rcb: '2/1', balls: [wide, out] as typeof values.data.innings1Balls.oversMap.Over0.balls });
+        const state = normaliseMatchState('match', matchInfo, values);
+        expect(state.scorecard[0]).toMatchObject({ runs: 2, wickets: 1 });
+        expect(state.scorecard[0].batting[0]).toMatchObject({ isOut: true, dismissal: 'Bowled' });
+        expect(state.scorecard[0].bowling[0]).toMatchObject({ wickets: 1, runs: 2 });
+        expect(state.scorecard[0].extras).toMatchObject({ total: 2, wides: 2 });
+        expect(state.scorecard[0].batting[0].strikeRate).toBe(0);
+        expect(state.scorecard[0].extras?.byes).toBeUndefined();
+    });
+
+    it('leaves unknown scorecard statistics blank instead of turning them into zero', () => {
+        const incomplete = structuredClone(commentary);
+        Object.assign(incomplete.data, { latestBatting: { batsman1: { playerID: 'fresh-id', playerName: 'Fresh Batter' } } });
+        const state = normaliseMatchState('match', matchInfo, incomplete);
+        expect(state.scorecard[0].batting.find(player => player.id === 'fresh-id')).toMatchObject({
+            runs: null, balls: null, fours: null, sixes: null, strikeRate: null,
+        });
     });
 
     it('ignores a pre-created empty second innings until its first delivery', () => {
@@ -157,6 +210,7 @@ describe('current CricClubs adapter', () => {
             overs: '0.3',
         });
         expect(state.currentOver.map(ball => ball.display)).toEqual(['2', '6', '4']);
+        expect(state.scorecard.map(innings => innings.number)).toEqual([1]);
     });
 
     it('detects the six on ball 2 before the later four arrives', () => {
@@ -168,6 +222,8 @@ describe('current CricClubs adapter', () => {
 
         const state = normaliseMatchState('match', matchInfo, afterBallTwo);
         expect(state.currentOver.map(ball => ball.display)).toEqual(['2', '6']);
+        expect(state.scorecard[0]).toMatchObject({ runs: 8, wickets: 0, overs: '0.2' });
+        expect(state.scorecard[0].batting.find(player => player.id === 'pavan-id')).toMatchObject({ runs: 8, balls: 2, sixes: 1 });
         expect(state.event).toEqual({ type: 'SIX', ballId: 'second' });
     });
 

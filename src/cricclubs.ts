@@ -23,6 +23,35 @@ export interface BowlerState {
     overs: string;
 }
 
+export interface BattingEntry extends Omit<BatterState, 'runs' | 'balls' | 'fours' | 'sixes'> {
+    runs: number | null;
+    balls: number | null;
+    fours: number | null;
+    sixes: number | null;
+    dismissal?: string;
+    isOut: boolean;
+    strikeRate: number | null;
+    striker?: boolean;
+}
+
+export interface BowlingEntry extends BowlerState {
+    economy: number | null;
+}
+
+export interface InningsScorecard {
+    number: number;
+    battingTeam: string;
+    bowlingTeam: string;
+    runs: number;
+    wickets: number;
+    overs: string;
+    runRate: number | null;
+    extras?: { total: number; wides?: number; noBalls?: number; byes?: number; legByes?: number };
+    batting: BattingEntry[];
+    bowling: BowlingEntry[];
+    completed: boolean;
+}
+
 export interface BallState {
     id: string;
     over: number;
@@ -63,6 +92,10 @@ export interface MatchState {
         overs: number | null;
         status?: string;
         tournament?: string;
+        matchType?: string;
+        result?: string;
+        target?: number;
+        requiredRunRate?: number;
     };
     innings: {
         number: number;
@@ -73,6 +106,7 @@ export interface MatchState {
         overs: string;
         runRate: number | null;
     };
+    scorecard: InningsScorecard[];
     striker?: BatterState;
     nonStriker?: BatterState;
     bowler?: BowlerState;
@@ -107,6 +141,12 @@ function stringValue(value: unknown): string {
 function numberValue(value: unknown, fallback = 0): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+    if (value === undefined || value === null || stringValue(value) === '') return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function boolValue(value: unknown): boolean {
@@ -362,6 +402,114 @@ function bowlerSummary(commentary: JsonRecord, currentBowlerId?: string): Bowler
     };
 }
 
+function extrasSuffix(ball: BallState): 'wide' | 'noBall' | 'bye' | 'legBye' | null {
+    const value = ball.display.toLowerCase();
+    if (ball.isWide || /wd$/.test(value)) return 'wide';
+    if (ball.isNoBall || /nb$/.test(value)) return 'noBall';
+    if (/lb$/.test(value)) return 'legBye';
+    if (/b$/.test(value)) return 'bye';
+    return null;
+}
+
+function creditedBowlerWicket(method?: string): boolean {
+    return /\b(bowled|caught|lbw|stumped|hit wicket)\b/i.test(method || '');
+}
+
+function inningsScorecard(source: InningsSource, balls: BallState[], number: number, team1: string, team2: string,
+    matchInfo: JsonRecord, commentary: JsonRecord, active: boolean, score: { runs: number; wickets: number }, overs: string): InningsScorecard {
+    const battingTeam = stringValue(source.data.teamName) || team1;
+    const bowlingTeam = battingTeam === team1 ? team2 : team1;
+    const latestBatting = asRecord(responseData(commentary).latestBatting);
+    const currentBatters = active ? ['batsman1', 'batsman2'].map(key => asRecord(latestBatting?.[key])).filter((r): r is JsonRecord => !!r) : [];
+    const namesById = new Map<string, string>();
+    for (const record of currentBatters) {
+        const name = playerName(record);
+        const id = stringValue(record.playerID);
+        if (name && id) namesById.set(id, name);
+    }
+    const roster = [...asArray(matchInfo.team1Players), ...asArray(matchInfo.team2Players)].map(asRecord);
+    for (const player of roster) {
+        if (!player) continue;
+        const id = stringValue(player.encryptedPlayerId) || stringValue(player.playerID);
+        const name = playerName(player);
+        if (id && name) namesById.set(id, name);
+    }
+    const batting = new Map<string, BattingEntry>();
+    const bowling = new Map<string, BowlingEntry>();
+    let extrasTotal = 0;
+    const extras: NonNullable<InningsScorecard['extras']> = { total: 0 };
+    for (const ball of balls) {
+        const batterId = ball.strikerId || ball.striker;
+        let entry = batting.get(batterId);
+        if (!entry) {
+            entry = { id: ball.strikerId, name: namesById.get(batterId) || ball.striker, runs: 0, balls: 0, fours: 0, sixes: 0, isOut: false, strikeRate: null };
+            batting.set(batterId, entry);
+        }
+        const extraKind = extrasSuffix(ball);
+        const batRuns = extraKind === 'wide' || extraKind === 'bye' || extraKind === 'legBye'
+            ? 0 : ball.runs - (extraKind === 'noBall' ? 1 : 0);
+        entry.runs = (entry.runs ?? 0) + Math.max(0, batRuns);
+        if (!ball.isWide && !ball.isNoBall) entry.balls = (entry.balls ?? 0) + 1;
+        if (ball.isFour) entry.fours = (entry.fours ?? 0) + 1;
+        if (ball.isSix) entry.sixes = (entry.sixes ?? 0) + 1;
+        if (ball.isWicket) {
+            const outId = ball.wicketPlayer || batterId;
+            const out = batting.get(outId) ?? entry;
+            out.isOut = true;
+            out.dismissal = ball.wicketMethod;
+        }
+        if (extraKind) {
+            const extraRuns = Math.max(0, ball.runs - Math.max(0, batRuns));
+            extrasTotal += extraRuns;
+            if (extraKind === 'wide') extras.wides = (extras.wides || 0) + extraRuns;
+            if (extraKind === 'noBall') extras.noBalls = (extras.noBalls || 0) + 1;
+            if (extraKind === 'bye') extras.byes = (extras.byes || 0) + extraRuns;
+            if (extraKind === 'legBye') extras.legByes = (extras.legByes || 0) + extraRuns;
+        }
+        if (ball.bowler) {
+            const bowlerId = ball.bowlerId || ball.bowler;
+            const bowler = bowling.get(bowlerId) ?? { id: ball.bowlerId, name: namesById.get(bowlerId) || ball.bowler, balls: 0, runs: 0, wickets: 0, overs: '0.0', economy: null };
+            if (!ball.isWide && !ball.isNoBall) bowler.balls++;
+            if (extraKind !== 'bye' && extraKind !== 'legBye') bowler.runs += ball.runs;
+            if (ball.isWicket && creditedBowlerWicket(ball.wicketMethod)) bowler.wickets++;
+            bowler.overs = `${Math.floor(bowler.balls / 6)}.${bowler.balls % 6}`;
+            bowling.set(bowlerId, bowler);
+        }
+    }
+    for (const [index, record] of currentBatters.entries()) {
+        const id = stringValue(record.playerID);
+        const name = playerName(record);
+        if (!name) continue;
+        const stats = { runs: optionalNumber(record.runsScored), balls: optionalNumber(record.ballsFaced), fours: optionalNumber(record.fours), sixes: optionalNumber(record.sixers) };
+        const entry = batting.get(id || name) ?? { id: id || undefined, name, runs: stats.runs ?? null, balls: stats.balls ?? null, fours: stats.fours ?? null, sixes: stats.sixes ?? null, isOut: false, strikeRate: null };
+        Object.assign(entry, { name, ...(stats.runs !== undefined ? { runs: stats.runs } : {}), ...(stats.balls !== undefined ? { balls: stats.balls } : {}), ...(stats.fours !== undefined ? { fours: stats.fours } : {}), ...(stats.sixes !== undefined ? { sixes: stats.sixes } : {}), striker: index === 0 });
+        batting.set(id || name, entry);
+    }
+    const latestBowling = active ? asRecord(responseData(commentary).latestBowling) : null;
+    for (const raw of Object.values(latestBowling ?? {})) {
+        const record = asRecord(raw);
+        if (!record) continue;
+        const id = stringValue(record.playerID);
+        const name = playerName(record);
+        const entry = bowling.get(id) ?? (!id ? [...bowling.values()].find(item => item.name === name) : undefined);
+        if (entry) {
+            const maidens = numberValue(record.maidens, NaN);
+            Object.assign(entry, { name: name || entry.name, balls: numberValue(record.balls, entry.balls), runs: numberValue(record.runs, entry.runs), wickets: numberValue(record.wickets, entry.wickets), ...(Number.isFinite(maidens) ? { maidens } : {}), overs: stringValue(record.overs) || entry.overs });
+        }
+    }
+    for (const entry of batting.values()) entry.strikeRate = entry.runs !== null && entry.balls ? Number((entry.runs * 100 / entry.balls).toFixed(2)) : null;
+    for (const entry of bowling.values()) entry.economy = entry.balls ? Number((entry.runs * 6 / entry.balls).toFixed(2)) : null;
+    extras.total = extrasTotal;
+    const hasExtras = balls.some(ball => extrasSuffix(ball) !== null);
+    return {
+        number, battingTeam, bowlingTeam, runs: score.runs, wickets: score.wickets, overs,
+        runRate: (() => { const [, whole, fraction = '0'] = /^(\d+)(?:\.(\d+))?$/.exec(overs) ?? []; const count = Number(whole) * 6 + Number(fraction); return count ? Number((score.runs * 6 / count).toFixed(2)) : null; })(),
+        extras: hasExtras ? extras : undefined,
+        batting: [...batting.values()], bowling: [...bowling.values()],
+        completed: boolValue(field(source.data, ['isInningsEnded', 'inningsEnded'])) || number === 1 && boolValue(field(commentary, ['isSecondInningsStarted'])) || false,
+    };
+}
+
 function teamNames(matchInfo: JsonRecord, innings: InningsSource): { team1: string; team2: string } {
     const team1 = stringValue(field(matchInfo, ['team1Name', 't1Name', 'firstTeamName', 'homeTeamName', 'teamOneName'])) || stringValue(field(matchInfo, ['teamName1']));
     const team2 = stringValue(field(matchInfo, ['team2Name', 't2Name', 'secondTeamName', 'awayTeamName', 'teamTwoName'])) || stringValue(field(matchInfo, ['teamName2']));
@@ -376,6 +524,12 @@ export function normaliseMatchState(matchId: string, matchInfoResponse: CricClub
     const selected = selectInnings(inningsSources(commentary));
     const totalOvers = numberValue(field(matchInfo, ['totalOvers', 'overs', 'noOfOvers', 'matchOvers']), NaN);
     const tournament = stringValue(field(matchInfo, ['seriesName', 'tournamentName', 'leagueName'])) || undefined;
+    const matchType = stringValue(field(matchInfo, ['matchType', 'matchFormat', 'format'])) || undefined;
+    const result = stringValue(field(matchInfo, ['result', 'matchResult', 'shortResult'])) || undefined;
+    const targetValue = numberValue(field(matchInfo, ['target', 'targetRuns', 'revisedTarget']), NaN);
+    const requiredRunRateValue = numberValue(field(matchInfo, ['requiredRunRate', 'requiredRR', 'RRR']), NaN);
+    const target = Number.isFinite(targetValue) ? targetValue : undefined;
+    const requiredRunRate = Number.isFinite(requiredRunRateValue) ? requiredRunRateValue : undefined;
     const names = selected ? teamNames(matchInfo, selected.source) : {
         team1: stringValue(field(matchInfo, ['team1Name', 't1Name', 'teamOneName'])) || 'Team 1',
         team2: stringValue(field(matchInfo, ['team2Name', 't2Name', 'teamTwoName'])) || 'Team 2',
@@ -383,8 +537,9 @@ export function normaliseMatchState(matchId: string, matchInfoResponse: CricClub
 
     if (!selected) {
         return {
-            match: { id: matchId, ...names, tournament, overs: Number.isFinite(totalOvers) ? totalOvers : null, status: stringValue(field(matchInfo, ['status', 'matchStatus'])) || undefined },
+            match: { id: matchId, ...names, tournament, matchType, result, target, requiredRunRate, overs: Number.isFinite(totalOvers) ? totalOvers : null, status: stringValue(field(matchInfo, ['status', 'matchStatus'])) || undefined },
             innings: { number: 0, battingTeam: names.team1, bowlingTeam: names.team2, runs: 0, wickets: 0, overs: '0.0', runRate: null },
+            scorecard: [],
             currentOver: [], lastBall: null, event: null,
         };
     }
@@ -405,6 +560,31 @@ export function normaliseMatchState(matchId: string, matchInfoResponse: CricClub
     const bowlingTeam = battingTeam === names.team1 ? names.team2 : names.team1;
     const runRate = lastBall && (lastBall.over * 6 + lastBall.ball) > 0
         ? Number((score.runs * 6 / (lastBall.over * 6 + lastBall.ball)).toFixed(2)) : null;
+    const sources = inningsSources(commentary);
+    const scorecards = sources.filter(source => {
+        if (source.number === selected.source.number) return true;
+        const sourceBalls = ballsInInnings(source);
+        const recordedScore = scoreFrom(source.data.rcb) ?? scoreFrom(field(source.data, ['score', 'total', 'runsWickets']));
+        return sourceBalls.length > 0 || numberValue(source.data.runs) > 0 || numberValue(source.data.overs) > 0
+            || (recordedScore !== null && (recordedScore.runs > 0 || recordedScore.wickets > 0));
+    }).map(source => {
+        const sourceBalls = ballsInInnings(source).map(item => item.ball);
+        const last = sourceBalls.at(-1);
+        const latestOver = sortedOverEntries(source.oversMap).at(-1)?.[1];
+        const sourceScore = scoreFrom(latestOver?.rcb) ?? scoreFrom(source.data.rcb) ?? scoreFrom(field(source.data, ['score', 'total', 'runsWickets'])) ?? {
+            runs: sourceBalls.reduce((sum, ball) => sum + ball.runs, 0),
+            wickets: sourceBalls.filter(ball => ball.isWicket).length,
+        };
+        const sourceOvers = stringValue(source.data.overs);
+        const sourceOverCount = last ? `${Math.floor((last.over * 6 + last.ball) / 6)}.${(last.over * 6 + last.ball) % 6}`
+            : /^\d+(\.\d+)?$/.test(sourceOvers) ? sourceOvers : '0.0';
+        return inningsScorecard(source, sourceBalls, source.number, names.team1, names.team2, matchInfo, commentary,
+            source.number === selected.source.number, sourceScore, sourceOverCount);
+    });
+    for (const innings of scorecards) {
+        if (innings.number < selected.source.number) innings.completed = true;
+    }
+    if (boolValue(field(matchInfo, ['isMatchEnded', 'matchEnded'])) && scorecards.length) scorecards.at(-1)!.completed = true;
     const inningsEnded = boolValue(field(selected.source.data, ['isInningsEnded', 'inningsEnded'])) || boolValue(field(matchInfo, ['isMatchEnded', 'matchEnded']));
     const dismissedId = lastBall?.wicketPlayer || lastBall?.strikerId;
     const roster = [...asArray(matchInfo.team1Players), ...asArray(matchInfo.team2Players)].map(asRecord);
@@ -416,8 +596,9 @@ export function normaliseMatchState(matchId: string, matchInfoResponse: CricClub
     return {
         dismissed,
         logos: { batting: stringValue(selected.source.data.teamLogoPath), bowling: stringValue(inningsSources(commentary).find(source => source.data.teamName === bowlingTeam)?.data.teamLogoPath) },
-        match: { id: matchId, ...names, tournament, ended: boolValue(field(matchInfo, ['isMatchEnded', 'matchEnded'])), overs: Number.isFinite(totalOvers) ? totalOvers : null, status: stringValue(field(matchInfo, ['status', 'matchStatus'])) || undefined },
+        match: { id: matchId, ...names, tournament, matchType, result, target, requiredRunRate, ended: boolValue(field(matchInfo, ['isMatchEnded', 'matchEnded'])), overs: Number.isFinite(totalOvers) ? totalOvers : null, status: stringValue(field(matchInfo, ['status', 'matchStatus'])) || undefined },
         innings: { number: selected.source.number, battingTeam, bowlingTeam, runs: score.runs, wickets: score.wickets, overs, runRate },
+        scorecard: scorecards,
         // Ball commentary abbreviates display names (for example "Pavan C" and
         // "Kedar N"). The latest summaries carry full names and current figures.
         striker: batterSummary(commentary, 'batsman1', stringValue(selected.source.data.teamId)) ?? (lastBall ? playerStats(allBalls, lastBall.striker, lastBall.strikerId) : undefined),
@@ -443,12 +624,14 @@ export async function getMatchState(matchId: string, leagueId: string): Promise<
 /** Compatibility bridge: preserves the existing scorebar, QR, and card components. */
 export function matchStateToOverlayData(state: MatchState): CricketAPIData {
     const rr = state.innings.runRate === null ? '' : state.innings.runRate.toFixed(2);
+    const teamNames = [state.match.team1, state.match.team2].filter(Boolean).join(' vs ');
+    const inningsLabel = state.innings.number ? `Innings ${state.innings.number}` : 'Awaiting play';
     return {
         values: {
             matchId: state.match.id,
             firstLogo: state.logos?.batting,
             secondLogo: state.logos?.bowling,
-            customTextValue: [state.match.tournament, `${state.innings.number ? `Innings ${state.innings.number}` : 'Awaiting play'} · vs ${state.innings.bowlingTeam}`].filter(Boolean).join(' · '),
+            customTextValue: [state.match.tournament, teamNames, inningsLabel].filter(Boolean).join(' · '),
             t1Name: state.innings.battingTeam,
             t2Name: state.innings.bowlingTeam,
             t1Total: String(state.innings.runs),

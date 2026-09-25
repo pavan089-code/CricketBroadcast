@@ -1,0 +1,53 @@
+.scorecard-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3vh 4vw;
+    overflow: hidden;
+    color: var(--fg);
+    font-family: 'Montserrat', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    box-sizing: border-box;
+}
+.scorecard-overlay[hidden] { display: none; }
+.scorecard-shell {
+    width: min(1500px, 92vw);
+    max-height: 94vh;
+    overflow: hidden;
+    padding: clamp(16px, 2vw, 34px);
+    box-sizing: border-box;
+    border: 1px solid var(--border-frame);
+    border-radius: var(--radius, 8px);
+    background: color-mix(in srgb, var(--surface-frame) 96%, transparent);
+    box-shadow: var(--shadow-slab, 0 10px 28px rgba(0, 0, 0, .32));
+}
+.scorecard-header { margin-bottom: 12px; text-align: center; }
+.scorecard-header h1 { margin: 0; color: var(--fg); font-size: clamp(20px, 2.2vw, 38px); line-height: 1.1; }
+.scorecard-tournament { margin: 0 0 6px; color: var(--fg-muted); font-size: clamp(11px, 1vw, 16px); letter-spacing: .12em; text-transform: uppercase; }
+.scorecard-match-details { margin: 7px 0 0; color: var(--fg-muted); font-size: clamp(11px, 1vw, 16px); }
+.scorecard-innings { margin-top: 10px; padding: 11px 14px; border: 1px solid var(--border-frame); border-radius: var(--radius, 8px); background: var(--surface-row); }
+.scorecard-innings.is-active { border-color: var(--brand-accent); background: color-mix(in srgb, var(--surface-row) 92%, var(--brand-accent)); }
+.scorecard-innings-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; color: var(--fg-muted); font-size: clamp(12px, 1vw, 17px); }
+.scorecard-innings-heading strong { flex: none; color: var(--fg-accent); font-size: clamp(17px, 1.6vw, 26px); }
+.scorecard-rate { margin: 3px 0 7px; color: var(--fg-muted); font-size: 12px; text-align: right; }
+.scorecard-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: clamp(12px, 2vw, 28px); }
+.scorecard-grid h3 { margin: 7px 0 5px; color: var(--fg-accent); font-size: clamp(11px, .9vw, 15px); letter-spacing: .12em; text-transform: uppercase; }
+.scorecard-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: clamp(11px, .9vw, 15px); }
+.scorecard-table th, .scorecard-table td { padding: 4px 5px; border-bottom: 1px solid var(--divider-row); text-align: right; white-space: nowrap; }
+.scorecard-table th { color: var(--fg-muted); font-weight: 600; font-size: max(10px, .84em); }
+.scorecard-table th:first-child, .scorecard-table td:first-child { width: 34%; text-align: left; }
+.scorecard-table th:nth-child(2), .scorecard-table td:nth-child(2) { text-align: left; }
+.batting-table th:nth-child(2), .batting-table td:nth-child(2) { width: 23%; overflow: hidden; text-overflow: ellipsis; }
+.player-cell { overflow: hidden; text-overflow: ellipsis; }
+.scorecard-extras, .scorecard-total { margin: 7px 0 0; color: var(--fg-muted); font-size: clamp(10px, .8vw, 13px); }
+.scorecard-total { color: var(--fg); font-weight: 700; letter-spacing: .04em; }
+.scorecard-empty { color: var(--fg-muted); text-align: center; }
+@media (max-height: 760px) {
+    .scorecard-shell { padding: 12px 18px; }
+    .scorecard-innings { margin-top: 7px; padding: 8px 11px; }
+    .scorecard-table th, .scorecard-table td { padding-block: 2px; }
+    .scorecard-grid h3 { margin-top: 4px; }
+    .scorecard-header { margin-bottom: 7px; }
+}

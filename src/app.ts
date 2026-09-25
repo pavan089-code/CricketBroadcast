@@ -19,6 +19,7 @@ import { detectEvents } from './events';
 import { ensureDataQr, renderDataCode, resetDataQrForTests } from './dataQr';
 import { enqueueCards, showSampleCard } from './cards';
 import { applyOverlayOptions } from './overlayOptions';
+import { renderFullScorecard } from './scorecard';
 
 let replayIndex = 0;
 /** True once the overlay has painted at least one successful frame of live/mock data. */
@@ -118,17 +119,21 @@ export async function updateScore() {
     const params = getQueryParams();
     const instructionsEl = document.getElementById('instructions');
     const overlayEl = document.querySelector('.overlay') as HTMLElement;
+    const scorecardEl = document.getElementById('scorecard-overlay');
+    const scorecardView = params.view === 'scorecard';
 
     // Show instructions if no match context is provided
     if (!params.matchId && !params.debug && params.mode !== 'replay') {
         if (instructionsEl) instructionsEl.style.display = 'flex';
         if (overlayEl) overlayEl.style.display = 'none';
+        if (scorecardEl) scorecardEl.setAttribute('hidden', '');
         trackOnce('home_view');
         return;
     }
 
     if (instructionsEl) instructionsEl.style.display = 'none';
-    if (overlayEl) overlayEl.style.display = '';
+    if (overlayEl) overlayEl.style.display = scorecardView ? 'none' : '';
+    if (scorecardEl) scorecardEl.toggleAttribute('hidden', !scorecardView);
 
     applyTheme(params.theme);
     updateLogo(params.logo);
@@ -178,6 +183,7 @@ export async function updateScore() {
             trackOnce('overlay_start', { clubId: params.leagueId, matchId: params.matchId, theme: params.theme, logo: params.logo });
             const state = await getMatchState(params.matchId!, params.leagueId);
             data = matchStateToOverlayData(state);
+            if (scorecardView) renderFullScorecard(state);
             // `event` describes the newest real delivery. It can be present on every poll,
             // so enqueue it only once for its stable ballId.
             if (!params.quiet && state.lastBall && state.lastBall.id !== lastProcessedBallId && !processedBalls.has(state.lastBall.id)) {

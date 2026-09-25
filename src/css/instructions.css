@@ -390,3 +390,26 @@ code {
 @media (prefers-reduced-motion: reduce) {
     .toast, .form button, .button-secondary, .theme-tag { transition: none; }
 }
+.overlay-link-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-block: 18px;
+}
+.overlay-link-card {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--h-border);
+    border-radius: var(--h-radius);
+    background: var(--h-surface);
+    box-shadow: var(--h-shadow);
+}
+.overlay-link-card h3 { margin: 0 0 5px; font-size: .9rem; letter-spacing: .1em; }
+.overlay-link-card p { margin: 0; color: var(--h-text-2); font-size: .9rem; }
+.overlay-link-card .url { display: block; overflow-wrap: anywhere; padding: 9px; border: 1px dashed var(--h-border); border-radius: .6rem; background: var(--h-code-bg); color: var(--h-code); font-family: ui-monospace, monospace; font-size: .78rem; }
+.overlay-link-card .actions { display: flex; align-items: center; gap: 9px; }
+.overlay-link-card .button-secondary { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.overlay-link-card a[aria-disabled="true"] { opacity: .6; }
+@media (max-width: 760px) { .overlay-link-cards { grid-template-columns: 1fr; } }

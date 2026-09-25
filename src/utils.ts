@@ -18,6 +18,7 @@ export function getQueryParams() {
         debug: urlParams.get('debug'), // Returns string value or null
         theme: urlParams.get('theme'),
         mode: urlParams.get('mode'),
+        view: urlParams.get('view'),
         quiet: urlParams.has('quiet'),
         card: urlParams.get('card'),
         // ?data=1 draws the machine-readable code for highlights/. Off by default, so a

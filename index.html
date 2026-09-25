@@ -23,7 +23,7 @@
             <main class="home-main" id="main-content">
                 <section class="card" aria-labelledby="builder-title">
                     <h2 id="builder-title">Build your overlay link</h2>
-                    <p>1. Paste your match link and connect. 2. Choose a theme. 3. Generate and copy your OBS URL.</p>
+                    <p>1. Paste your match link and connect. 2. Choose a theme. 3. Copy or preview either overlay URL.</p>
                     <form id="url-builder" class="form" autocomplete="off">
                         <div class="field">
                             <label for="match-url">CricClubs match URL</label>
@@ -44,6 +44,12 @@
                                 <p class="hint" id="build-club-hint">Normally filled automatically. For a restricted league page, enter its league ID or use a match link containing leagueId.</p>
                             </div>
                         </details>
+                        <div class="field-row">
+                            <div class="field">
+                                <label for="build-theme">Theme</label>
+                                <select id="build-theme" name="theme"></select>
+                            </div>
+                        </div>
                         <div class="field"><label for="build-title">Tournament / match title</label><input id="build-title" maxlength="100" placeholder="Optional broadcast title"></div>
                         <details><summary>Broadcast options</summary>
                             <div class="field"><label for="build-color">Team color (hex, optional)</label><input id="build-color" placeholder="#254aa5" pattern="#[0-9a-fA-F]{6}"></div>
@@ -52,22 +58,21 @@
                             <div class="field"><label for="build-sponsor">Sponsor logo URL</label><input id="build-sponsor" type="url" placeholder="https://…"></div>
                             <label><input id="build-quiet" type="checkbox"> Disable event graphics</label>
                         </details>
-                        <div class="field-row">
-                            <div class="field">
-                                <label for="build-theme">Theme</label>
-                                <select id="build-theme" name="theme"></select>
-                            </div>
+                        <div class="overlay-link-cards">
+                            <article class="overlay-link-card">
+                                <div><h3>LIVE SCOREBUG</h3><p>Live score, current over, batter/bowler, FOUR/SIX/WICKET animations.</p></div>
+                                <label for="scorebug-url">Scorebug URL</label>
+                                <output id="scorebug-url" class="url" data-state="incomplete">Connect your match to generate this URL.</output>
+                                <div class="actions"><button type="button" id="scorebug-copy" disabled>Copy Scorebug URL</button><a id="scorebug-preview" class="button-secondary" href="?debug=1&amp;theme=modern-light&amp;view=scorebug" target="_blank" rel="noopener">Preview</a></div>
+                            </article>
+                            <article class="overlay-link-card">
+                                <div><h3>FULL SCORECARD</h3><p>Complete live batting and bowling scorecard.</p></div>
+                                <label for="scorecard-url">Full scorecard URL</label>
+                                <output id="scorecard-url" class="url" data-state="incomplete">Connect your match to generate this URL.</output>
+                                <div class="actions"><button type="button" id="scorecard-copy" disabled>Copy Full Scorecard URL</button><a id="scorecard-preview" class="button-secondary" href="?debug=1&amp;theme=modern-light&amp;view=scorecard" target="_blank" rel="noopener">Preview</a></div>
+                            </article>
                         </div>
-                        <button type="button" id="build-generate" disabled>Generate OBS URL</button>
-                        <div class="field">
-                            <label for="build-url">Your overlay URL</label>
-                            <div class="url-row">
-                                <output id="build-url" class="url" for="build-match-id build-club-id build-theme" data-state="incomplete"></output>
-                                <button type="button" id="build-copy" disabled>Copy OBS URL</button>
-                            </div>
-                            <p class="hint">Add it as a <strong>Browser Source</strong> at 1920 × 1080. The page background is transparent.</p>
-                        </div>
-                        <a id="build-preview" class="button-secondary" href="?debug=1&amp;theme=modern-light" target="_blank" rel="noopener">Preview with sample data</a>
+                        <p class="hint">Add each link as an independent OBS Browser Source at 1920 × 1080 or 1280 × 720. The background stays transparent.</p>
                     </form>
                 </section>
 
@@ -94,32 +99,6 @@
                     </ul>
                 </section>
 
-                <section class="card" aria-labelledby="link-title">
-                    <h2 id="link-title">Link a YouTube live stream</h2>
-                    <p>Attach your stream to the match on CricClubs so people can find it from the scorecard.</p>
-                    <form id="link-stream-form" class="form" autocomplete="off">
-                        <div class="field-row">
-                            <div class="field">
-                                <label for="link-club-id">Club ID</label>
-                                <input type="text" id="link-club-id" name="clubId" inputmode="numeric" pattern="[0-9]*" required>
-                            </div>
-                            <div class="field">
-                                <label for="link-match-id">Match ID</label>
-                                <input type="text" id="link-match-id" name="matchId" inputmode="numeric" pattern="[0-9]*" placeholder="2079" required>
-                            </div>
-                        </div>
-                        <div class="field">
-                            <label for="link-stream-url">YouTube live stream URL</label>
-                            <input type="url" id="link-stream-url" name="liveStreamURL" placeholder="https://www.youtube.com/watch?v=…" aria-describedby="link-url-hint" required>
-                            <p class="hint" id="link-url-hint">A <code>youtube.com/watch</code> or <code>youtu.be</code> link.</p>
-                        </div>
-                        <div class="actions">
-                            <button type="submit" id="link-stream-submit">Link Stream</button>
-                            <p class="hint">Briefly opens a small CricClubs window, so allow pop-ups for this site. CricClubs can take up to a minute to show the change.</p>
-                        </div>
-                    </form>
-                </section>
-
                 <details class="card reference">
                     <summary><h2>All URL parameters</h2></summary>
                     <div class="table-wrap">
@@ -131,6 +110,7 @@
                                 <tr><td><code>matchId</code></td><td>Yes</td><td>The CricClubs match to follow.</td></tr>
                                 <tr><td><code>leagueId</code></td><td>For live scores</td><td>Validated CricClubs league ID. Filled by setup; never guessed.</td></tr>
                                 <tr><td><code>clubId</code></td><td>No</td><td>Backward-compatible alias for <code>leagueId</code>.</td></tr>
+                                <tr><td><code>view</code></td><td>No</td><td><code>scorebug</code> for the existing live bar or <code>scorecard</code> for the full live scorecard. Omit it to keep the existing scorebug view.</td></tr>
                                 <tr><td><code>theme</code></td><td>No</td><td>One of the themes above. Defaults to <code>modern-light</code>.</td></tr>
                                 <tr><td><code>logo</code></td><td>No</td><td>Shows a sponsor logo in the top-right corner (<code>1</code> or <code>2</code>).</td></tr>
                                 <tr><td><code>debug</code></td><td>No</td><td>Sample data instead of a live match: <code>1</code> first innings, <code>2</code> chase, <code>3</code> result, <code>4</code> toss, <code>5</code> no logos. Add <code>card=wicket|milestone|partnership|boundary</code> to hold a sample card on screen.</td></tr>
@@ -213,6 +193,12 @@
                     <div class="event-detail" id="event-detail"></div>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <section id="scorecard-overlay" class="scorecard-overlay" aria-label="Full live scorecard" hidden>
+        <div class="scorecard-shell" id="scorecard-content">
+            <header class="scorecard-header"><p class="scorecard-empty">Connecting to live score…</p></header>
         </div>
     </section>
 

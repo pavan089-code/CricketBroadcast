@@ -14,6 +14,9 @@ describe('buildOverlayUrl', () => {
     it('always includes an explicitly supplied league, including the old default', () => {
         expect(buildOverlayUrl({ matchId: '2079', leagueId: '1089463', theme: 'modern-light' }, base)).toBe('https://score.abhinav.dev/?matchId=2079&leagueId=1089463');
     });
+    it.each(['scorebug', 'scorecard'] as const)('adds the explicit %s view when requested', view => {
+        expect(buildOverlayUrl({ matchId: 'm', leagueId: 'l', theme: 'modern-light', view }, base)).toBe(`https://score.abhinav.dev/?matchId=m&leagueId=l&view=${view}`);
+    });
     it('trims IDs, accepts clubId, and resolves themes', () => {
         expect(buildOverlayUrl({ matchId: ' 2079 ', clubId: ' 42 ', theme: 'kkr' }, base)).toBe('https://score.abhinav.dev/?matchId=2079&leagueId=42&theme=kkr');
         expect(buildOverlayUrl({ matchId: '1', theme: 'modern' }, base)).toBe('https://score.abhinav.dev/?matchId=1');
@@ -34,7 +37,6 @@ describe('setupUrlBuilder with the real setup form', () => {
     const writeText = vi.fn(async () => {});
     const enter = (id: string, value: string) => { const input = el<HTMLInputElement>(id); input.value=value; input.dispatchEvent(new Event('input')); };
     const connect = async () => { el<HTMLButtonElement>('connect-match').click(); await vi.waitFor(() => expect(el<HTMLButtonElement>('connect-match').disabled).toBe(false)); };
-    const generate = () => el<HTMLButtonElement>('build-generate').click();
     beforeEach(() => {
         vi.clearAllMocks();
         document.body.innerHTML = readFileSync('index.html','utf8');
@@ -46,25 +48,36 @@ describe('setupUrlBuilder with the real setup form', () => {
         setupUrlBuilder();
     });
     afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
-    it('starts with no guessed league and disables connect, generate and copy', () => {
+    it('starts with no guessed league and disables both copy buttons', () => {
         expect(el<HTMLInputElement>('build-club-id').value).toBe('');
-        for (const id of ['connect-match','build-generate','build-copy']) expect(el<HTMLButtonElement>(id).disabled).toBe(true);
+        for (const id of ['connect-match','scorebug-copy','scorecard-copy']) expect(el<HTMLButtonElement>(id).disabled).toBe(true);
+        for (const id of ['scorebug-preview','scorecard-preview']) expect(el<HTMLAnchorElement>(id).getAttribute('aria-disabled')).toBe('true');
         expect(Array.from(el<HTMLSelectElement>('build-theme').options).map(o=>o.value)).toEqual([...AVAILABLE_THEMES]);
-        expect(el('build-url').textContent).not.toContain('matchId=');
+        expect(el('scorebug-url').textContent).not.toContain('matchId=');
     });
-    it('validates the known URL before generate and copy, then invalidates changes', async () => {
+    it('generates both explicit URLs after validation, copies either, and invalidates ID changes', async () => {
         enter('match-url',link); await connect();
         expect(getMatchState).toHaveBeenCalledWith('mJTQjabTbjHqUpybIGVqqA','kieC6vVijImUZXUfaN8QOg');
         expect(el('connected-match').textContent).toContain('12/0 (0.3 ov)');
-        expect(el<HTMLButtonElement>('build-copy').disabled).toBe(true);
-        generate(); el<HTMLButtonElement>('build-copy').click();
-        await vi.waitFor(()=>expect(writeText).toHaveBeenCalledWith('https://score.abhinav.dev/?matchId=mJTQjabTbjHqUpybIGVqqA&leagueId=kieC6vVijImUZXUfaN8QOg'));
+        expect(el('scorebug-url').textContent).toBe('https://score.abhinav.dev/?matchId=mJTQjabTbjHqUpybIGVqqA&leagueId=kieC6vVijImUZXUfaN8QOg&view=scorebug');
+        expect(el('scorecard-url').textContent).toBe('https://score.abhinav.dev/?matchId=mJTQjabTbjHqUpybIGVqqA&leagueId=kieC6vVijImUZXUfaN8QOg&view=scorecard');
+        el<HTMLSelectElement>('build-theme').value = 'modern-dark';
+        el<HTMLSelectElement>('build-theme').dispatchEvent(new Event('change'));
+        expect(el('scorebug-url').textContent).toContain('&view=scorebug&theme=modern-dark');
+        el<HTMLInputElement>('build-title').value = 'Final';
+        el<HTMLInputElement>('build-title').dispatchEvent(new Event('input'));
+        expect(el('scorecard-url').textContent).toContain('title=Final');
+        el<HTMLInputElement>('build-quiet').checked = true;
+        el<HTMLInputElement>('build-quiet').dispatchEvent(new Event('change'));
+        expect(el('scorecard-url').textContent).toContain('quiet=1');
+        el<HTMLButtonElement>('scorebug-copy').click();
+        await vi.waitFor(()=>expect(writeText).toHaveBeenCalledWith(el('scorebug-url').textContent));
+        expect(el<HTMLAnchorElement>('scorecard-preview').href).toContain('&view=scorecard');
         expect(el('connection-status').textContent).toContain('URL copied');
-        enter('build-title','Final');
-        expect(el<HTMLButtonElement>('build-copy').disabled).toBe(true);
-        generate(); expect(el('build-url').textContent).toContain('title=Final');
+        enter('build-club-id','changed');
+        expect(el<HTMLButtonElement>('scorecard-copy').disabled).toBe(true);
         enter('match-url','https://cricclubs.com/other/results/new');
-        expect(el<HTMLButtonElement>('build-generate').disabled).toBe(true);
+        expect(el<HTMLButtonElement>('scorecard-copy').disabled).toBe(true);
         expect(el<HTMLInputElement>('build-club-id').value).toBe('');
     });
     it('reports invalid URLs without a network call',async()=>{
@@ -77,7 +90,7 @@ describe('setupUrlBuilder with the real setup form', () => {
         enter('match-url',link);await connect();
         expect(el('connection-status').textContent).toContain('League ID required');
         expect(el<HTMLDetailsElement>('advanced-ids').open).toBe(true);
-        expect(el<HTMLButtonElement>('build-generate').disabled).toBe(true);
+        expect(el<HTMLButtonElement>('scorecard-copy').disabled).toBe(true);
         expect(getMatchState).not.toHaveBeenCalled();
         enter('build-club-id','manualLeague');await connect();
         expect(fetch).toHaveBeenCalledTimes(1);
@@ -91,9 +104,9 @@ describe('setupUrlBuilder with the real setup form', () => {
         vi.mocked(getMatchState).mockRejectedValueOnce(error);
         enter('match-url',link);await connect();
         expect(el('connection-status').textContent).toBe('The match is temporarily unavailable. Check your connection and retry.');
-        expect(el<HTMLButtonElement>('build-generate').disabled).toBe(true);
+        expect(el<HTMLButtonElement>('scorebug-copy').disabled).toBe(true);
         expect(el('connect-match').textContent).toBe('Retry connection');
-        await connect();expect(el<HTMLButtonElement>('build-generate').disabled).toBe(false);
+        await connect();expect(el<HTMLButtonElement>('scorebug-copy').disabled).toBe(false);
     });
     it('distinguishes invalid matches',async()=>{
         vi.mocked(getMatchState).mockRejectedValueOnce(new CricClubsApiError('unavailable',404));
@@ -115,12 +128,12 @@ describe('setupUrlBuilder with the real setup form', () => {
         enter('match-url',link+'&leagueId=explicit');el<HTMLButtonElement>('connect-match').click();
         enter('build-club-id','changed');release(state);
         await vi.waitFor(()=>expect(el<HTMLButtonElement>('connect-match').disabled).toBe(false));
-        expect(el<HTMLButtonElement>('build-generate').disabled).toBe(true);
+        expect(el<HTMLButtonElement>('scorecard-copy').disabled).toBe(true);
         expect(el('connected-match').textContent).toBe('');
     });
     it('reports clipboard failure with a manual-copy fallback',async()=>{
-        writeText.mockRejectedValueOnce(new Error('denied'));enter('match-url',link);await connect();generate();el<HTMLButtonElement>('build-copy').click();
-        await vi.waitFor(()=>expect(showToast).toHaveBeenLastCalledWith('Copy failed. Select the link and copy it manually.','error'));
+        writeText.mockRejectedValueOnce(new Error('denied'));enter('match-url',link);await connect();el<HTMLButtonElement>('scorebug-copy').click();
+        await vi.waitFor(()=>expect(showToast).toHaveBeenLastCalledWith('Copy failed. Select the URL and copy it manually.','error'));
     });
     it('does nothing if the setup form is absent',()=>{document.body.innerHTML='';expect(()=>setupUrlBuilder()).not.toThrow();});
 });

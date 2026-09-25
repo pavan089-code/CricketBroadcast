@@ -43,7 +43,8 @@ function mountShell() {
                 <button id="link-stream-submit" type="submit">Link Stream</button>
             </form>
         </div>
-        <div class="overlay"></div>`;
+        <div class="overlay"></div>
+        <section id="scorecard-overlay" hidden><div id="scorecard-content"></div></section>`;
 }
 
 const instructions = () => document.getElementById('instructions')!;
@@ -125,6 +126,30 @@ describe('updateScore mode switch', () => {
         vi.mocked(getMatchState).mockResolvedValue(live);
         await updateScore();
         expect(getMatchState).toHaveBeenCalledWith('7', '');
+    });
+
+    it('routes explicit scorebug view to the unchanged scorebug', async () => {
+        setSearch('?matchId=2079&leagueId=42&view=scorebug');
+        vi.mocked(getMatchState).mockResolvedValue(live);
+        await updateScore();
+        expect(overlay().style.display).toBe('');
+        expect(document.getElementById('scorecard-overlay')!.hasAttribute('hidden')).toBe(true);
+        expect(updateScoreboard).toHaveBeenCalledWith(live);
+    });
+
+    it('routes explicit scorecard view through the same live state and polling call', async () => {
+        setSearch('?matchId=2079&leagueId=42&view=scorecard');
+        const scorecardState = {
+            match: { id: '2079', team1: 'Hyderabad Warriors', team2: 'Rajasthan Royals', tournament: 'League', overs: 20, status: undefined },
+            innings: { number: 1, battingTeam: 'Hyderabad Warriors', bowlingTeam: 'Rajasthan Royals', runs: 12, wickets: 0, overs: '0.3', runRate: 24 },
+            scorecard: [], currentOver: [], lastBall: null, event: null,
+        };
+        vi.mocked(getMatchState).mockResolvedValue(scorecardState as any);
+        await updateScore();
+        expect(getMatchState).toHaveBeenCalledTimes(1);
+        expect(overlay().style.display).toBe('none');
+        expect(document.getElementById('scorecard-overlay')!.hasAttribute('hidden')).toBe(false);
+        expect(document.getElementById('scorecard-content')!.textContent).toContain('Hyderabad Warriors');
     });
 });
 

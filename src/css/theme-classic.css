@@ -1,0 +1,35 @@
+/* CLASSIC: warm cream bar, navy score tab, gold accents, square-ish corners. Layout lives in overlay-base.css. */
+.theme-classic {
+    --radius: 3px;
+
+    /* Brand */
+    --brand-accent: #b8860b;
+
+    /* Surfaces */
+    --surface-frame: rgba(247, 242, 231, 0.96);
+    --surface-pill: #0b2545;
+    --surface-panel: rgba(11, 37, 69, 0.06);
+    --surface-row: rgba(11, 37, 69, 0.03);
+
+    /* Lines */
+    --border-frame: rgba(11, 37, 69, 0.22);
+    --divider: rgba(11, 37, 69, 0.18);
+    --divider-row: rgba(11, 37, 69, 0.10);
+
+    /* Text */
+    --fg: #0b2545;
+    --fg-pill: #ffffff;
+    --fg-title: #e3b341;
+    --fg-accent: #8a5a00;
+    --fg-muted: #5c6b7a;
+    --fg-on-bright: #0b2545;
+
+    /* Balls */
+    --ball-idle: rgba(11, 37, 69, 0.10);
+    --ball-neutral: #0b2545;
+    --ball-neutral-fg: #ffffff;
+
+    /* Cards */
+    --card-bg: #E9E1CF;
+    --card-fg: #0B2545;
+}

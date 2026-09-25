@@ -1,0 +1,230 @@
+/**
+ * Application orchestration: the poll loop, the mode switch in updateScore(), and the
+ * Link Live Stream form. Kept separate from script.ts (the entry point with side effects)
+ * so it can be unit-tested.
+ */
+import { mock_1stInnings, mock_2ndInnings, mock_matchEnded, mock_toss, mock_noTeamImage } from './mockData';
+import { sampleReplayData } from './replayData';
+import { CONFIG } from './config';
+import { DOM } from './dom';
+import { getQueryParams } from './utils';
+import { applyTheme, updateLogo } from './theme';
+import { getMatchState, matchStateToOverlayData, overlayEventFor } from './cricclubs';
+import { updateTeamLogos, updateScoreboard } from './ui';
+import { CricketAPIData } from './types';
+import { linkLiveStream, LinkLiveStreamError, extractYouTubeVideoId } from './liveStream';
+import { trackOnce, track, LinkOutcome } from './analytics';
+import { showToast } from './toast';
+import { detectEvents } from './events';
+import { ensureDataQr, renderDataCode, resetDataQrForTests } from './dataQr';
+import { enqueueCards, showSampleCard } from './cards';
+import { applyOverlayOptions } from './overlayOptions';
+
+let replayIndex = 0;
+/** True once the overlay has painted at least one successful frame of live/mock data. */
+let hasRenderedScore = false;
+/** The previous frame, so events (wicket, fifty, boundary, target) can be derived from the diff. */
+let lastData: CricketAPIData | null = null;
+let sampleCardShown = false;
+/** The public commentary feed is newest-first; this prevents a card replay on unchanged polls. */
+let lastProcessedBallId: string | null = null;
+const processedBalls = new Set<string>();
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Test hook: forget replay position, last frame and whether a frame has rendered. */
+export function resetAppStateForTests() {
+    replayIndex = 0;
+    hasRenderedScore = false;
+    lastData = null;
+    sampleCardShown = false;
+    lastProcessedBallId = null;
+    processedBalls.clear();
+    resetDataQrForTests();
+}
+
+/** Paint a frame and fire any cards its changes call for. */
+function renderFrame(data: CricketAPIData, quiet: boolean, showData = false, deriveLegacyEvents = true) {
+    updateScoreboard(data);
+    // Drawn after the bar so it is never blocked by a slow paint, and only when asked:
+    // the code is scaffolding for highlights/, not part of the graphic.
+    setDataCode(data, showData);
+    if (!quiet && deriveLegacyEvents) enqueueCards(detectEvents(lastData, data));
+    lastData = data;
+}
+
+function setDataCode(data: CricketAPIData, showData: boolean) {
+    const canvas = DOM.dataCode;
+    if (!canvas) return;
+    canvas.hidden = !showData;
+    if (showData) renderDataCode(canvas, data);
+}
+
+/**
+ * Wires up the "Link Live Stream" form shown on the instructions screen.
+ * Prefills the club ID and submits the CricClubs control-panel call on submit.
+ */
+export function setupLinkStreamForm() {
+    const form = document.getElementById('link-stream-form') as HTMLFormElement | null;
+    const clubIdInput = document.getElementById('link-club-id') as HTMLInputElement | null;
+    const matchIdInput = document.getElementById('link-match-id') as HTMLInputElement | null;
+    const streamUrlInput = document.getElementById('link-stream-url') as HTMLInputElement | null;
+    const submitButton = document.getElementById('link-stream-submit') as HTMLButtonElement | null;
+
+    if (!form || !clubIdInput || !matchIdInput || !streamUrlInput || !submitButton) return;
+
+    clubIdInput.value = CONFIG.DEFAULT_CLUB_ID;
+
+    let inFlight = false;
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (inFlight) return;
+
+        const clubId = clubIdInput.value.trim();
+        const matchId = matchIdInput.value.trim();
+        const liveStreamURL = streamUrlInput.value.trim();
+        if (!clubId || !matchId || !liveStreamURL) return;
+
+        // Busy state rather than `disabled`: the button stays focusable and announced.
+        inFlight = true;
+        const originalLabel = submitButton.textContent;
+        submitButton.setAttribute('aria-busy', 'true');
+        submitButton.textContent = 'Linking...';
+        const videoId = extractYouTubeVideoId(liveStreamURL);
+        let outcome: LinkOutcome = 'submitted';
+        try {
+            await linkLiveStream({ clubId, matchId, liveStreamURL });
+            showToast('Live stream link submitted!', 'success');
+        } catch (error) {
+            console.error('Error linking live stream:', error);
+            outcome = error instanceof LinkLiveStreamError ? error.code : 'error';
+            const message = error instanceof Error && error.message
+                ? error.message
+                : 'Failed to link live stream. Please try again.';
+            showToast(message, 'error');
+        } finally {
+            track('link_stream_submit', { clubId, matchId, videoId, outcome });
+            submitButton.removeAttribute('aria-busy');
+            submitButton.textContent = originalLabel;
+            inFlight = false;
+        }
+    });
+}
+
+/**
+ * Main update function that fetches data (or uses mock data) and updates the UI.
+ * Handles theme application, logging, and polling logic.
+ */
+export async function updateScore() {
+    const params = getQueryParams();
+    const instructionsEl = document.getElementById('instructions');
+    const overlayEl = document.querySelector('.overlay') as HTMLElement;
+
+    // Show instructions if no match context is provided
+    if (!params.matchId && !params.debug && params.mode !== 'replay') {
+        if (instructionsEl) instructionsEl.style.display = 'flex';
+        if (overlayEl) overlayEl.style.display = 'none';
+        trackOnce('home_view');
+        return;
+    }
+
+    if (instructionsEl) instructionsEl.style.display = 'none';
+    if (overlayEl) overlayEl.style.display = '';
+
+    applyTheme(params.theme);
+    updateLogo(params.logo);
+    applyOverlayOptions();
+    // Pull in the QR encoder only for streams that asked for the data code.
+    if (params.data) await ensureDataQr();
+
+    if (params.mode === 'replay') {
+        const data = sampleReplayData[replayIndex] as unknown as CricketAPIData;
+        renderFrame(data, params.quiet, params.data);
+        replayIndex = (replayIndex + 1) % sampleReplayData.length;
+        return;
+    }
+
+    if (!params.matchId && !params.debug) {
+        return;
+    }
+
+    try {
+        let data: CricketAPIData;
+        if (params.debug) {
+            // Mock Data Logic
+            switch (params.debug) {
+                case '2':
+                    data = mock_2ndInnings as unknown as CricketAPIData;
+                    break;
+                case '3':
+                    data = mock_matchEnded as unknown as CricketAPIData;
+                    break;
+                case '4':
+                    data = mock_toss as unknown as CricketAPIData;
+                    break;
+                case '5':
+                    data = mock_noTeamImage as unknown as CricketAPIData;
+                    break;
+                case '1':
+                case 'true':
+                default:
+                    data = mock_1stInnings as unknown as CricketAPIData;
+                    break;
+            }
+            if (params.card && !sampleCardShown) {
+                sampleCardShown = true;
+                showSampleCard(params.card);
+            }
+        } else {
+            trackOnce('overlay_start', { clubId: params.leagueId, matchId: params.matchId, theme: params.theme, logo: params.logo });
+            const state = await getMatchState(params.matchId!, params.leagueId);
+            data = matchStateToOverlayData(state);
+            // `event` describes the newest real delivery. It can be present on every poll,
+            // so enqueue it only once for its stable ballId.
+            if (!params.quiet && state.lastBall && state.lastBall.id !== lastProcessedBallId && !processedBalls.has(state.lastBall.id)) {
+                lastProcessedBallId = state.lastBall.id;
+                processedBalls.add(state.lastBall.id);
+                const event = overlayEventFor(state);
+                if (event) enqueueCards([event]);
+            }
+            await updateTeamLogos(data);
+            renderFrame(data, params.quiet, params.data, false);
+            hasRenderedScore = true;
+            overlayEl?.removeAttribute('data-connection');
+            return;
+        }
+
+        await updateTeamLogos(data);
+        renderFrame(data, params.quiet, params.data);
+        hasRenderedScore = true;
+
+    } catch (error) {
+        console.error('Error fetching score data:', error);
+        // Once we've shown real data, keep the last good frame on screen: a single
+        // dropped poll mid-broadcast should not flash "Error" at viewers. Before the
+        // first successful render there's nothing to keep, so surface the problem
+        // (most likely a wrong matchId/clubId) to whoever is setting up the source.
+        if (!hasRenderedScore) {
+            DOM.teamName.textContent = 'Connecting…';
+            overlayEl?.setAttribute('data-connection', 'retrying');
+        }
+    }
+}
+
+/**
+ * Polls with a fixed gap *after* each update finishes, so a slow response can't
+ * overlap with the next poll and paint stale data over fresher data.
+ */
+export async function pollLoop() {
+    try {
+        await updateScore();
+    } catch (error) {
+        console.error('Unexpected error in update loop:', error);
+    }
+    pollTimer = setTimeout(pollLoop, getQueryParams().refreshRate);
+}
+
+/** Stops the timeout chain when the browser source is disposed or navigates away. */
+export function stopPolling() {
+    if (pollTimer !== undefined) clearTimeout(pollTimer);
+    pollTimer = undefined;
+}

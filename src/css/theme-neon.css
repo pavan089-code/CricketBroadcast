@@ -1,0 +1,32 @@
+/* NEON: near-black slab with cyan accents. Layout lives in overlay-base.css. */
+.theme-neon {
+    /* Brand */
+    --brand-accent: #22d3ee;
+
+    /* Surfaces */
+    --surface-frame: rgba(6, 8, 15, 0.94);
+    --surface-pill: #0e7490;
+    --surface-panel: rgba(34, 211, 238, 0.06);
+    --surface-row: rgba(34, 211, 238, 0.03);
+
+    /* Lines */
+    --border-frame: rgba(34, 211, 238, 0.25);
+    --divider: rgba(34, 211, 238, 0.22);
+    --divider-row: rgba(34, 211, 238, 0.10);
+
+    /* Text */
+    --fg: #e6fbff;
+    --fg-title: #a5f3fc;
+    --fg-accent: #67e8f9;
+    --fg-muted: #7aa7b3;
+    --fg-on-bright: #06080f;
+
+    /* Balls */
+    --ball-idle: rgba(255, 255, 255, 0.12);
+    --ball-neutral: #ffffff;
+    --ball-neutral-fg: #14171f;
+
+    /* Cards */
+    --card-bg: #0F1420;
+    --card-fg: #E6FBFF;
+}

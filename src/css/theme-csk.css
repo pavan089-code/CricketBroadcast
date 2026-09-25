@@ -1,0 +1,33 @@
+/* CSK: brand colour on the team block, light neutral bar. Layout lives in overlay-base.css. */
+.theme-csk {
+    /* Brand */
+    --brand-accent: #1D418C;
+
+    /* Surfaces */
+    --surface-frame: rgba(250, 248, 237, 0.96);
+    --surface-pill: #F9CD05;
+    --surface-panel: rgba(20, 23, 31, 0.04);
+    --surface-row: rgba(20, 23, 31, 0.02);
+
+    /* Lines */
+    --border-frame: rgba(20, 23, 31, 0.15);
+    --divider: rgba(20, 23, 31, 0.12);
+    --divider-row: rgba(20, 23, 31, 0.07);
+
+    /* Text */
+    --fg: #14171F;
+    --fg-pill: #0F1F4D;
+    --fg-title: #1D418C;
+    --fg-accent: #1D418C;
+    --fg-muted: #5C6470;
+    --fg-on-bright: #14171F;
+
+    /* Balls */
+    --ball-idle: rgba(20, 23, 31, 0.08);
+    --ball-neutral: #14171F;
+    --ball-neutral-fg: #FFFFFF;
+
+    /* Cards */
+    --card-bg: #E8EBF0;
+    --card-fg: #14171F;
+}

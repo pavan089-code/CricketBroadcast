@@ -1,3 +1,7 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
 [[redirects]]
   from = "/api/cricclubs/*"
   to = "https://overlay-analytics.23eg107d09.workers.dev/api/cricclubs/:splat"

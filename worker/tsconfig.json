@@ -6,6 +6,7 @@
         "lib": ["ESNext"],
         "types": ["@cloudflare/workers-types"],
         "strict": true,
+        "resolveJsonModule": true,
         "noEmit": true,
         "noUnusedLocals": true,
         "noImplicitReturns": true,

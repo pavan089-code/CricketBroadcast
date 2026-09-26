@@ -36,7 +36,7 @@ describe('routing', () => {
         const req = request('/api/cricclubs/match?matchId=match&leagueId=league');
         const response = await worker.fetch(req, env());
         expect(await response.text()).toBe('cricclubs proxy');
-        expect(handleCricClubs).toHaveBeenCalledWith(req);
+        expect(handleCricClubs).toHaveBeenCalledWith(req, false);
         expect(prepare).not.toHaveBeenCalled();
     });
 

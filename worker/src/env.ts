@@ -4,4 +4,5 @@ export interface Env {
     ACCESS_AUD: string;
     STATS_KEY?: string;
     VISITOR_SALT?: string;
+    CRICCLUBS_DIAGNOSTICS?: string;
 }

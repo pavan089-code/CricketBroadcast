@@ -1,4 +1,5 @@
 import { CricketAPIData } from './types';
+import { validMatchPayload } from '../shared/cricclubsValidation';
 
 const PROXY_PATH = '/api/cricclubs/match';
 
@@ -249,17 +250,26 @@ function sortedOverEntries(oversMap: JsonRecord): Array<[number, JsonRecord]> {
         .sort(([a], [b]) => a - b);
 }
 
-function ballFromRaw(raw: JsonRecord, over: number, fallbackBall: number): BallState | null {
+function ballFromRaw(raw: JsonRecord, over: number, fallbackBall: number, innings: number): BallState | null {
     if (stringValue(raw.ballType).toLowerCase() === 'auto comment ball') return null;
-    const id = stringValue(raw.ballId);
-    // Commentary can include text-only records without a ball id. They are never a delivery.
+    // Legacy deliveries omit ballId. Creation time plus innings/coordinates gives
+    // stable identity without confusing auto comments or illegal balls.
+    const legacyDelivery = !stringValue(raw.ballId) && Number.isFinite(Date.parse(stringValue(raw.createdAt)))
+        && Number.isInteger(raw.over) && Number.isInteger(raw.ball)
+        && numberValue(raw.over, -1) >= 0 && numberValue(raw.ball, -1) >= 0 && numberValue(raw.ball) <= 6
+        && /^(good ball|wide|no ball|bye|leg bye)$/i.test(stringValue(raw.ballType));
+    const id = stringValue(raw.ballId) || (legacyDelivery ? `legacy:${innings}:${raw.over}:${raw.ball}:${raw.createdAt}` : '');
+    // Text-only records without delivery identity are never treated as balls.
     if (!id) return null;
     const display = stringValue(raw.runsDisplay) || (raw.outMethod && stringValue(raw.outMethod).toLowerCase() !== 'not out' ? 'W' : stringValue(raw.runs) || '.');
     const type = stringValue(raw.ballType).toLowerCase();
     const isWide = /wide|\bwd\b/.test(type) || /wd$/i.test(display);
     const isNoBall = /no.?ball|\bnb\b/.test(type) || /nb$/i.test(display);
-    const wicketMethod = stringValue(raw.outMethod);
-    const isWicket = wicketMethod !== '' && wicketMethod.toLowerCase() !== 'not out';
+    const legacyMethod = legacyDelivery && display === 'W'
+        ? /<strong>\s*(RUN OUT|CATCH|BOWLED|LBW|STUMPED|HIT WICKET)\s*<\/strong>/i.exec(stringValue(raw.commentary))?.[1].toLowerCase()
+        : undefined;
+    const wicketMethod = stringValue(raw.outMethod) || (legacyMethod === 'catch' ? 'caught' : legacyMethod) || '';
+    const isWicket = (wicketMethod !== '' && wicketMethod.toLowerCase() !== 'not out') || (legacyDelivery && display === 'W');
     return {
         id,
         over: numberValue(raw.over, over),
@@ -272,12 +282,12 @@ function ballFromRaw(raw: JsonRecord, over: number, fallbackBall: number): BallS
         nonStrikerId: stringValue(raw.nonStriker) || undefined,
         bowler: stringValue(raw.bowlerName) || undefined,
         bowlerId: stringValue(raw.bowler) || undefined,
-        isFour: boolValue(raw.isFour),
-        isSix: boolValue(raw.isSix),
+        isFour: boolValue(raw.isFour) || (legacyDelivery && /<strong>\s*FOUR\s*<\/strong>/i.test(stringValue(raw.commentary))),
+        isSix: boolValue(raw.isSix) || (legacyDelivery && /<strong>\s*SIX\s*<\/strong>/i.test(stringValue(raw.commentary))),
         isWicket,
         wicketPlayer: stringValue(raw.outPerson) || undefined,
         wicketMethod: isWicket ? wicketMethod : undefined,
-        timestamp: stringValue(raw.time) || undefined,
+        timestamp: stringValue(raw.time) || stringValue(raw.createdAt) || undefined,
         isWide,
         isNoBall,
     };
@@ -290,7 +300,7 @@ function ballsInInnings(source: InningsSource): Array<{ ball: BallState; overDat
         // API arrays are newest-first. Reversing each over preserves delivery order even
         // when illegal balls share the same legal-ball number and timestamp.
         for (const [index, raw] of asArray(overData.balls).slice().reverse().entries()) {
-            const ball = ballFromRaw(asRecord(raw) ?? {}, over, index + 1);
+            const ball = ballFromRaw(asRecord(raw) ?? {}, over, index + 1, source.number);
             if (ball && !seen.has(ball.id)) {
                 seen.add(ball.id);
                 result.push({ ball, overData });
@@ -588,7 +598,7 @@ export function normaliseMatchState(matchId: string, matchInfoResponse: CricClub
     const inningsEnded = boolValue(field(selected.source.data, ['isInningsEnded', 'inningsEnded'])) || boolValue(field(matchInfo, ['isMatchEnded', 'matchEnded']));
     const dismissedId = lastBall?.wicketPlayer || lastBall?.strikerId;
     const roster = [...asArray(matchInfo.team1Players), ...asArray(matchInfo.team2Players)].map(asRecord);
-    const dismissedPlayer = roster.find(player => player && stringValue(player.encryptedPlayerId) === dismissedId);
+    const dismissedPlayer = roster.find(player => player && (stringValue(player.encryptedPlayerId) || stringValue(player.playerID)) === dismissedId);
     const dismissedName = dismissedPlayer ? playerName(dismissedPlayer) : lastBall?.striker || 'Wicket';
     const dismissed = lastBall?.isWicket ? playerStats(allBalls, dismissedName, dismissedId) : undefined;
     if (lastBall?.isWicket) lastBall.wicketPlayer = dismissedName;
@@ -614,8 +624,7 @@ export function normaliseMatchState(matchId: string, matchInfoResponse: CricClub
 export async function getMatchState(matchId: string, leagueId: string): Promise<MatchState> {
     if (!matchId.trim() || !leagueId.trim()) throw new CricClubsApiError('A match ID and league ID are required.');
     const { matchInfo, commentary } = await getJson<{ matchInfo: CricClubsMatchInfoResponse; commentary: CricClubsCommentaryResponse }>(proxyUrl(matchId, leagueId));
-    if (!asRecord(matchInfo) || !asRecord(commentary) || !asRecord(commentary.data)
-        || !Object.keys(commentary.data || {}).some(key => /^innings\d+Balls$/i.test(key))) {
+    if (!validMatchPayload(matchInfo, commentary)) {
         throw new CricClubsApiError('Match unavailable. Check the match link and try again.', 404);
     }
     return normaliseMatchState(matchId, matchInfo, commentary);

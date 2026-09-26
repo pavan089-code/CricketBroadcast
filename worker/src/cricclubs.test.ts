@@ -14,16 +14,16 @@ describe('CricClubs first-party proxy', () => {
 
     it('proxies both current endpoints with a fresh content token per upstream request', async () => {
         const fetchMock = vi.fn()
-            .mockResolvedValueOnce(new Response(JSON.stringify({ data: { team1Name: 'Hyderabad Warriors' } }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ data: { innings1Balls: {} } }), { status: 200 }));
+            .mockResolvedValueOnce(new Response(JSON.stringify({ data: { team1Name: 'Hyderabad Warriors', team2Name: 'Rajasthan Royals' } }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ data: { innings1Balls: { teamName: 'Hyderabad Warriors', oversMap: {} } } }), { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);
 
         const response = await handleCricClubs(new Request('https://overlay.example/api/cricclubs/match?matchId=mJTQjabTbjHqUpybIGVqqA&leagueId=kieC6vVijImUZXUfaN8QOg'));
 
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({
-            matchInfo: { data: { team1Name: 'Hyderabad Warriors' } },
-            commentary: { data: { innings1Balls: {} } },
+            matchInfo: { data: { team1Name: 'Hyderabad Warriors', team2Name: 'Rajasthan Royals' } },
+            commentary: { data: { innings1Balls: { teamName: 'Hyderabad Warriors', oversMap: {} } } },
         });
         expect(fetchMock).toHaveBeenCalledTimes(2);
         expect(fetchMock.mock.calls[0][0]).toBe('https://core-prod-origin.cricclubs.com/core/public/match/getMatchInfo?clubId=kieC6vVijImUZXUfaN8QOg&matchId=mJTQjabTbjHqUpybIGVqqA');

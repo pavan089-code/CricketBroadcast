@@ -9,7 +9,7 @@ export default {
     async fetch(request, env): Promise<Response> {
         const url = new URL(request.url);
         if (url.pathname === '/api/cricclubs/resolve') return handleResolve(request);
-        if (url.pathname === '/api/cricclubs/match') return handleCricClubs(request);
+        if (url.pathname === '/api/cricclubs/match') return handleCricClubs(request, env.CRICCLUBS_DIAGNOSTICS === 'true');
         if (url.pathname === '/api/collect') return handleCollect(request, env);
         if (url.pathname === '/stats' || url.pathname.startsWith('/stats/')) return handleStats(request, env, url);
         return new Response('Not found', { status: 404 });

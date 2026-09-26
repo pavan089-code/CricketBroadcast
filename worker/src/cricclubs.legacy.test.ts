@@ -24,7 +24,7 @@ it.each([
         `https://core-prod-origin.cricclubs.com/core/scoreCard/getBallByBall?clubId=38131&matchId=${matchId}&X-Auth-Token=null`,
     ]);
     for (const call of fetcher.mock.calls) {
-        expect(call[1].redirect).toBe('error');
+        expect(call[1].redirect).toBe('manual');
         const token = new Headers(call[1].headers).get('x-content-token');
         expect(token).toMatch(/^[A-Za-z0-9+/]{171}=$/);
         expect(JSON.stringify(log.mock.calls)).not.toContain(token);
@@ -52,4 +52,14 @@ it.each([
     const response = await handleCricClubs(new Request('https://overlay.test/api/cricclubs/match?matchId=123&leagueId=456'), true);
     expect(response.status).toBe(502);
     expect(log).toHaveBeenCalledWith('cricclubs', expect.objectContaining({ reason }));
+});
+
+it('does not follow an upstream redirect', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, {
+        status: 302, headers: { Location: 'https://untrusted.example/' },
+    })));
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const response = await handleCricClubs(new Request('https://overlay.test/api/cricclubs/match?matchId=123&leagueId=456'), true);
+    expect(response.status).toBe(502);
+    expect(log).toHaveBeenCalledWith('cricclubs', expect.objectContaining({ reason: 'upstream_redirect' }));
 });

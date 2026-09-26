@@ -91,7 +91,9 @@ async function upstreamJson(url: string, diagnostic: Diagnostic): Promise<{ ok: 
     }
     try {
         response = await fetch(url, {
-            redirect: 'error',
+            // Cloudflare Workers supports manual redirects, not `error`. Do not
+            // follow a redirect to a caller- or upstream-controlled destination.
+            redirect: 'manual',
             signal: AbortSignal.timeout(12000),
             headers: {
                 'x-content-token': token,
@@ -100,8 +102,10 @@ async function upstreamJson(url: string, diagnostic: Diagnostic): Promise<{ ok: 
                 'User-Agent': OFFICIAL_USER_AGENT,
             },
         });
-    } catch {
-        report({ reason: 'network_or_timeout' });
+    } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 256) : 'Unknown fetch failure';
+        const name = error instanceof Error ? error.name : 'UnknownError';
+        report({ reason: 'network_or_timeout', errorName: name, errorMessage: message });
         return { ok: false, status: 502 };
     }
     try {
@@ -110,6 +114,10 @@ async function upstreamJson(url: string, diagnostic: Diagnostic): Promise<{ ok: 
         const html = /text\/html/i.test(contentType) || /^\s*<(?:!doctype|html|head|body)\b/i.test(body);
         report({ httpStatus: response.status, contentType, bodyLength: body.length,
             responseKind: html ? 'html' : !body.trim() ? 'empty' : 'json_or_text' });
+        if (response.status >= 300 && response.status < 400) {
+            report({ reason: 'upstream_redirect' });
+            return { ok: false, status: 502 };
+        }
         if (!response.ok) {
             report({ reason: `http_${response.status}` });
             return { ok: false, status: response.status };

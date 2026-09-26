@@ -4,7 +4,7 @@ The browser calls only `/api/cricclubs/resolve` and `/api/cricclubs/match` on it
 
 The server fetches current match information and commentary concurrently. Each upstream request generates fresh RSA/PKCS#1 v1.5 authentication material from CricClubs' public key and the current time. No captured tokens, login cookies, or private keys are required. The implementation belongs only in server code. Vite reuses the Worker handler so development and production use the same routes and validation.
 
-`shared/matchUrl.ts` accepts HTTPS CricClubs result links and legacy matchId/clubId query links. Verified custom domains are registered with an exact league path (`carolinacricket.org` and `www.carolinacricket.org` currently). Unknown hosts, credentials, non-HTTPS links and custom ports are rejected. This registry never selects a network destination: upstream requests always go to the fixed official API host, with redirects disabled. Additional custom domains require verification and a registry entry, not new match-handling code. Resolution uses explicit league IDs, verified aliases, or a single unambiguous league identifier from the public match page. Restricted or ambiguous pages return manual-entry guidance. There is no default league in live overlay requests.
+`shared/matchUrl.ts` accepts HTTPS CricClubs result links and legacy matchId/clubId query links. Verified custom domains are registered with an exact league path (`carolinacricket.org` and `www.carolinacricket.org` currently). Unknown hosts, credentials, non-HTTPS links and custom ports are rejected. This registry never selects a network destination: upstream requests always go to the fixed official API host, and upstream redirects are never followed. Additional custom domains require verification and a registry entry, not new match-handling code. Resolution uses explicit league IDs, verified aliases, or a single unambiguous league identifier from the public match page. Restricted or ambiguous pages return manual-entry guidance. There is no default league in live overlay requests.
 
 ## Numeric-ID compatibility and failure trace (2026-09-26)
 
@@ -43,7 +43,7 @@ Set `CRICCLUBS_DIAGNOSTICS=true` in the Vite process environment or Worker varia
 The public HTML scorecard pages themselves returned Cloudflare HTTP 403 challenge pages during inspection. The verified API calls succeeded and do not require scraping or bypassing those challenges. Unregistered custom domains and any installations not backed by the supported official APIs remain unsupported until verified.
 
 Verification after the change: `npm run build` passed the frontend strict typecheck,
-216 tests and production Vite build; Worker `npm run test:run` passed 56 tests and
+216 tests and production Vite build; Worker `npm run test:run` passed 57 tests and
 `npm run typecheck` passed. The four Python highlight test scripts also passed
 all 82 tests using their standalone runners. `git diff --check` passed.
 

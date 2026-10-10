@@ -77,6 +77,15 @@ function json(value: unknown, status = 200): Response {
 
 type Diagnostic = (metadata: Record<string, unknown>) => void;
 
+/** Upstream rosters may contain contact/auth fields unrelated to the public score. */
+function publicScoreData(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(publicScoreData);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value).filter(([key]) =>
+        !/(?:email|phone|mobile|password|token|secret|credential|address|dateofbirth|^dob$)/i.test(key)
+    ).map(([key, child]) => [key, publicScoreData(child)]));
+}
+
 async function upstreamJson(url: string, diagnostic: Diagnostic): Promise<{ ok: true; data: unknown } | { ok: false; status: number }> {
     const endpoint = new URL(url).pathname;
     const report = (metadata: Record<string, unknown>) => diagnostic({ host: CORE_ORIGIN, endpoint, ...metadata });
@@ -173,7 +182,7 @@ export async function handleCricClubs(request: Request, diagnostics = false): Pr
     const matchValidated = validMatchPayload(matchInfo.data, commentary.data);
     diagnostic({ matchValidated });
     if (!matchValidated) return json({ error: 'CricClubs returned an invalid match payload.' }, 502);
-    return json({ matchInfo: matchInfo.data, commentary: commentary.data });
+    return json(publicScoreData({ matchInfo: matchInfo.data, commentary: commentary.data }));
 }
 
 function upstreamFailure(upstreamStatus: number): Response {

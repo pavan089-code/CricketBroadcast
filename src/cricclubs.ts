@@ -1,5 +1,6 @@
 import { CricketAPIData } from './types';
 import { validMatchPayload } from '../shared/cricclubsValidation';
+import { validId } from '../shared/matchUrl';
 
 const PROXY_PATH = '/api/cricclubs/match';
 
@@ -622,7 +623,7 @@ export function normaliseMatchState(matchId: string, matchInfoResponse: CricClub
 
 /** Fetches both current public endpoints and returns one normalised match state. */
 export async function getMatchState(matchId: string, leagueId: string): Promise<MatchState> {
-    if (!matchId.trim() || !leagueId.trim()) throw new CricClubsApiError('A match ID and league ID are required.');
+    if (!validId(matchId) || !validId(leagueId)) throw new CricClubsApiError('A valid match ID and league ID are required.', 400);
     const { matchInfo, commentary } = await getJson<{ matchInfo: CricClubsMatchInfoResponse; commentary: CricClubsCommentaryResponse }>(proxyUrl(matchId, leagueId));
     if (!validMatchPayload(matchInfo, commentary)) {
         throw new CricClubsApiError('Match unavailable. Check the match link and try again.', 404);

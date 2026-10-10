@@ -8,11 +8,11 @@ Netlify serves the static `dist/` site and proxies `/api/cricclubs/*`, `/api/col
 
 ## Release only after approval
 
-No deployment was performed during the final V1 pass. Run these steps only after review:
+Run these steps for an approved release:
 
-1. Use the approved upstream Git checkout and preserve its history. This workspace arrived without `.git`; the new local `.git` has no historical commits or remote. Import the reviewed source changes into the upstream checkout rather than replacing upstream history or force-pushing it.
+1. Use `pavan089-code/CricketBroadcast`, production branch `master`, and preserve its history. The Netlify project is `stupendous-centaur-21db85` (site ID `9415985f-531e-4a22-8722-521500bc48e7`), serving `https://stupendous-centaur-21db85.netlify.app`. Never force-push a release.
 2. From the project root, run `npm ci`, `npm test -- --run`, and `npm run build`. In `worker/`, run `npm ci`, `npm run typecheck`, and `npm run test:run`.
-3. Confirm the Cloudflare account, the `workers.dev` subdomain, the D1 database ID in `worker/wrangler.toml`, and that the Netlify production project uses build command `npm run build` and publish directory `dist`. If its base directory points at the old nested folder, change it to the repository root. Do not configure a custom domain or DNS route during this phase.
+3. Confirm the Cloudflare account, the `workers.dev` subdomain, the D1 database ID in `worker/wrangler.toml`, and that Netlify reads build command `npm run build` and publish directory `dist` from `netlify.toml`. The project uses the repository root and Node 24. No frontend environment variables are required. Do not configure a custom domain or DNS route during this phase.
 4. In `worker/`, authenticate with `npx wrangler login` if needed. Verify existing `VISITOR_SALT` and `STATS_KEY` secrets or Access settings; do not print secret values or rotate existing secrets unnecessarily. The CricClubs proxy needs no private credentials. `/stats` remains closed when neither Access nor a stats key is configured.
 5. Apply the existing analytics migration, if pending: `npx wrangler d1 migrations apply overlay-analytics --remote`.
 6. Deploy the Worker first: `npm run deploy` from `worker/`.

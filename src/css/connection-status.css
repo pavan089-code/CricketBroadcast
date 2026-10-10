@@ -1,0 +1,18 @@
+/* Failure/loading status is separate from both score layouts. */
+#overlay-connection-status {
+    position: fixed;
+    left: 50%;
+    bottom: 180px;
+    transform: translateX(-50%);
+    max-width: 90vw;
+    padding: 8px 14px;
+    border-radius: 4px;
+    background: #172231;
+    color: #fff;
+    font: 500 14px 'Montserrat', sans-serif;
+    text-align: center;
+    z-index: 1100;
+    pointer-events: none;
+}
+#overlay-connection-status.for-scorecard { bottom: 8px; }
+#overlay-connection-status[hidden] { display: none; }

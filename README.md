@@ -140,6 +140,44 @@ See [`docs/highlights.md`](docs/highlights.md).
 
 ## Development
 
+The live scorebug (default view or `view=scorebug`) plays transparent FOUR,
+SIX and WICKET stingers from `assets/animations/`. `src/eventAnimation.ts` imports
+the VP9-alpha WebMs as Vite asset URLs; the production build copies them unchanged
+with hashed names. No conversion or eager video preloading is performed.
+
+For manual testing, run `npm run dev`, open `/?debug=1`, and press **4**, **6** or
+**W**. These invisible hotkeys are development-only and ignore typing fields,
+modified shortcuts and held keys. They are disabled on the setup/full-scorecard
+pages and with `?quiet`, which also disables automatic stingers.
+
+Live triggers use only normalized `MatchState.event` values. League, match,
+innings and stable delivery ID deduplicate events for the browser tab's session,
+including events skipped during playback. Playback is never interrupted or queued;
+polling and existing cards continue underneath. The latest qualifying delivery on
+the first live poll is eligible, unless the match has ended. Session storage keeps
+consumed delivery identities across Browser Source reloads; no scores or player data
+are stored. If storage is unavailable, the first snapshot is treated as a baseline
+and deduplication continues in memory. Legacy mock/replay fixtures use hotkeys for stinger
+testing. Only the newest normalized event from each poll is considered.
+
+Use a 1920×1080 OBS Browser Source. The 60 fps clips play muted once: FOUR 1.80s,
+SIX 1.95s, WICKET 2.10s. Compact lower-centre artwork overlays the camera with
+true alpha, leaving the scorebug visible. Other aspect ratios use transparent
+letterboxing without stretching/cropping. Clips disappear on `ended` or failure.
+The score remains visible until playback starts; a 10-second no-progress watchdog
+releases stalled playback. Development warnings include the event and asset URL.
+
+The original MP4s remain as source backups; the application only loads the WebMs.
+The animation layer is raised 100 pixels at 1920×1080, scaled with the contained
+video at other viewport sizes. Review the package in the match's actual OBS scene
+before air; no deployment or scene switching is performed by this component.
+
+Live views show a connection warning when updates fail while retaining the last
+received score; the warning clears automatically after recovery. Full scoreboard
+and full scorecard refer to the same `view=scorecard` view. Unknown `view` values
+fall back to the scorebug. Full scorecards require a connected live match URL;
+the legacy debug/replay fixtures only render the scorebug.
+
 ```bash
 npm run test           # watch mode
 npm run test:run       # single run (used by the build)
@@ -155,8 +193,9 @@ npm run typecheck
 
 `npm run build` fails on type errors **and** test failures, so run it before opening a PR.
 
-**Deployment**: Netlify builds `main` and serves it as `score.abhinav.dev`, proxied by
-Cloudflare. The Worker route that supplies live CricClubs data is deployed manually with
+**Deployment**: Netlify builds `master` and serves it at
+`https://stupendous-centaur-21db85.netlify.app`. First-party API routes proxy to
+the Cloudflare Worker. The Worker that supplies live CricClubs data is deployed manually with
 `cd worker && npm run deploy`; see [`docs/deployment.md`](docs/deployment.md) and
 [`docs/analytics.md`](docs/analytics.md).
 

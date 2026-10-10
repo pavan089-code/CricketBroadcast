@@ -20,6 +20,8 @@ import { ensureDataQr, renderDataCode, resetDataQrForTests } from './dataQr';
 import { enqueueCards, showSampleCard } from './cards';
 import { applyOverlayOptions } from './overlayOptions';
 import { renderFullScorecard } from './scorecard';
+import { EventAnimation } from './eventAnimation';
+import './css/connection-status.css';
 
 let replayIndex = 0;
 /** True once the overlay has painted at least one successful frame of live/mock data. */
@@ -31,9 +33,20 @@ let sampleCardShown = false;
 let lastProcessedBallId: string | null = null;
 const processedBalls = new Set<string>();
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
+let eventAnimation: EventAnimation | null = null;
+
+function connectionStatus(message: string, scorecard = false) {
+    const status = document.getElementById('overlay-connection-status');
+    if (!status) return;
+    status.textContent = message;
+    status.hidden = !message;
+    status.classList.toggle('for-scorecard', scorecard);
+}
 
 /** Test hook: forget replay position, last frame and whether a frame has rendered. */
 export function resetAppStateForTests() {
+    eventAnimation?.dispose();
+    eventAnimation = null;
     replayIndex = 0;
     hasRenderedScore = false;
     lastData = null;
@@ -121,9 +134,13 @@ export async function updateScore() {
     const overlayEl = document.querySelector('.overlay') as HTMLElement;
     const scorecardEl = document.getElementById('scorecard-overlay');
     const scorecardView = params.view === 'scorecard';
+    const animate = !scorecardView && !params.quiet && Boolean(params.matchId || params.debug || params.mode === 'replay');
+    if (animate && !eventAnimation) eventAnimation = new EventAnimation();
+    eventAnimation?.setEnabled(animate);
 
     // Show instructions if no match context is provided
     if (!params.matchId && !params.debug && params.mode !== 'replay') {
+        connectionStatus('');
         if (instructionsEl) instructionsEl.style.display = 'flex';
         if (overlayEl) overlayEl.style.display = 'none';
         if (scorecardEl) scorecardEl.setAttribute('hidden', '');
@@ -134,6 +151,8 @@ export async function updateScore() {
     if (instructionsEl) instructionsEl.style.display = 'none';
     if (overlayEl) overlayEl.style.display = scorecardView ? 'none' : '';
     if (scorecardEl) scorecardEl.toggleAttribute('hidden', !scorecardView);
+    if (params.debug || params.mode === 'replay') connectionStatus(scorecardView ? 'Use a connected match URL for the full scorecard.' : '', scorecardView);
+    else if (!hasRenderedScore) connectionStatus('Connecting to match…', scorecardView);
 
     applyTheme(params.theme);
     updateLogo(params.logo);
@@ -184,6 +203,7 @@ export async function updateScore() {
             const state = await getMatchState(params.matchId!, params.leagueId);
             data = matchStateToOverlayData(state);
             if (scorecardView) renderFullScorecard(state);
+            if (!scorecardView) eventAnimation?.observe(state, params.leagueId);
             // `event` describes the newest real delivery. It can be present on every poll,
             // so enqueue it only once for its stable ballId.
             if (!params.quiet && state.lastBall && state.lastBall.id !== lastProcessedBallId && !processedBalls.has(state.lastBall.id)) {
@@ -195,6 +215,7 @@ export async function updateScore() {
             await updateTeamLogos(data);
             renderFrame(data, params.quiet, params.data, false);
             hasRenderedScore = true;
+            connectionStatus('');
             overlayEl?.removeAttribute('data-connection');
             return;
         }
@@ -205,6 +226,13 @@ export async function updateScore() {
 
     } catch (error) {
         console.error('Error fetching score data:', error);
+        const status = error instanceof Error && 'status' in error ? error.status : undefined;
+        connectionStatus(hasRenderedScore
+            ? 'Updates interrupted · showing last received score. Retrying…'
+            : status === 400 || status === 404
+                ? 'Match unavailable. Check the match and league IDs. Retrying…'
+                : 'Unable to reach the match. Retrying…', scorecardView);
+        overlayEl?.setAttribute('data-connection', 'retrying');
         // Once we've shown real data, keep the last good frame on screen: a single
         // dropped poll mid-broadcast should not flash "Error" at viewers. Before the
         // first successful render there's nothing to keep, so surface the problem
@@ -233,4 +261,6 @@ export async function pollLoop() {
 export function stopPolling() {
     if (pollTimer !== undefined) clearTimeout(pollTimer);
     pollTimer = undefined;
+    eventAnimation?.dispose();
+    eventAnimation = null;
 }

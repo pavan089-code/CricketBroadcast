@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { parseMatchUrl } from '../shared/matchUrl';
 
 describe('CricClubs link parsing', () => {
+    it.each(['cricclubs.com', 'www.cricclubs.com', 'app.cricclubs.com'])('accepts supported result/query forms and parameter ordering on %s', host => {
+        for (const path of [
+            '/sample/results/match_1/?extra=ok&leagueId=league_2',
+            '/sample/fullScorecard.do?leagueId=league_2&matchId=match_1',
+            '/sample/viewScorecard.do/?matchId=match%5F1&extra=ok&clubId=league%5F2',
+        ]) expect(parseMatchUrl(`https://${host}${path}`)).toMatchObject({ matchId: 'match_1', leagueId: 'league_2' });
+    });
+    it.each(['carolinacricket.org', 'www.carolinacricket.org'])('accepts both verified scorecard paths on %s', host => {
+        for (const path of ['fullScorecard', 'viewScorecard'])
+            expect(parseMatchUrl(`https://${host}/CarolinaCricket/${path}.do?extra=ok&matchId=123&clubId=456`)).toMatchObject({ matchId: '123', leagueId: '456' });
+    });
+    it.each(['not a URL', 'https://example.test/?matchId=1&leagueId=2', 'https://cricclubs.com/?matchId=bad%20id&clubId=2', 'https://cricclubs.com/?matchId=1&leagueId=bad%2Fid', 'https://carolinacricket.org/CarolinaCricket/fullScorecard.do/?matchId=1&clubId=2'])('rejects malformed or unsupported forms: %s', url => {
+        expect(() => parseMatchUrl(url)).toThrow();
+    });
     it.each([
         ['https://cricclubs.com/CarolinaCricket/fullScorecard.do?clubId=38131&matchId=24778', '24778'],
         ['https://www.carolinacricket.org/CarolinaCricket/viewScorecard.do?matchId=24780&clubId=38131', '24780'],

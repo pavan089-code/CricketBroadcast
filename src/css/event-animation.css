@@ -1,0 +1,20 @@
+/* Mounted directly on body, outside the scorebar's stacking context. */
+.event-animation {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+    object-fit: contain;
+    /* Raise 100px at 1920x1080, following the contained 16:9 video's scale. */
+    transform: translateY(calc(-1 * min(100vw / 19.2, 100vh / 10.8)));
+    /* VP9 alpha and transparent letterboxing keep the live camera visible. */
+    background: transparent;
+    pointer-events: none;
+    visibility: hidden;
+}
+
+/* Keep the live score visible while the first frame loads. No transitions. */
+.event-animation.is-playing {
+    visibility: visible;
+}

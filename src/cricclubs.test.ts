@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CricClubsApiError, getCommentary, getMatchInfo, getMatchState, matchStateToOverlayData, normaliseMatchState, overlayEventFor } from './cricclubs';
 
+it.each([['', 'league'], ['match', ''], ['bad id', 'league'], ['match', 'bad/id']])('rejects invalid direct IDs before fetching: %s / %s', async (matchId, leagueId) => {
+    const fetcher = vi.fn();
+    vi.stubGlobal('fetch', fetcher);
+    try {
+        await expect(getMatchState(matchId, leagueId)).rejects.toMatchObject({ status: 400 });
+        expect(fetcher).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+});
+
 const matchInfo = {
     data: {
         team1Name: 'Hyderabad Warriors',

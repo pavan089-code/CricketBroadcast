@@ -4,6 +4,18 @@ import { createContentToken, handleCricClubs } from './cricclubs';
 describe('CricClubs first-party proxy', () => {
     afterEach(() => vi.unstubAllGlobals());
 
+    it('removes nested contact and authentication fields without dropping score fields', async () => {
+        const info = { data: { team1Name: 'Team A', team2Name: 'Team B', team1Players: [{ playerID: 1, name: 'Player A', email: 'private@example.test', mobileNumber: '123', dateOfBirth: '2000-01-01' }], accessToken: 'private-token' } };
+        const commentary = { data: { innings1Balls: { teamName: 'Team A', oversMap: {}, captain: { phone: '123', runs: 42 } } } };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(info))).mockResolvedValueOnce(new Response(JSON.stringify(commentary))));
+        const response = await handleCricClubs(new Request('https://overlay.example/api/cricclubs/match?matchId=1&leagueId=2'));
+        expect(response.status).toBe(200);
+        const data = await response.json() as any;
+        expect(data.matchInfo.data.team1Players).toEqual([{ playerID: 1, name: 'Player A' }]);
+        expect(data.matchInfo.data).not.toHaveProperty('accessToken');
+        expect(data.commentary.data.innings1Balls.captain).toEqual({ runs: 42 });
+    });
+
     it('creates a fresh base64 RSA ciphertext without returning or storing any credential', () => {
         const first = createContentToken(1_700_000_000_000);
         const second = createContentToken(1_700_000_000_000);

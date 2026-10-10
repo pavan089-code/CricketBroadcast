@@ -17,7 +17,7 @@ export async function handleResolve(request: Request): Promise<Response> {
     if (link.slug) {
         try {
             const response = await fetch(`https://cricclubs.com/${encodeURIComponent(link.slug)}/results/${encodeURIComponent(link.matchId)}`, {
-                redirect: 'error', signal: AbortSignal.timeout(8000), headers: { Accept: 'text/html' },
+                redirect: 'manual', signal: AbortSignal.timeout(8000), headers: { Accept: 'text/html' },
             });
             if (response.ok) {
                 const html = (await response.text()).slice(0, 2_000_000).replace(/\\"/g, '"');

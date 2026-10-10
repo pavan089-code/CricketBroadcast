@@ -44,6 +44,7 @@ function mountShell() {
             </form>
         </div>
         <div class="overlay"></div>
+        <div id="overlay-connection-status" hidden></div>
         <section id="scorecard-overlay" hidden><div id="scorecard-content"></div></section>`;
 }
 
@@ -52,6 +53,7 @@ const overlay = () => document.querySelector('.overlay') as HTMLElement;
 const live = { values: { t1Name: 'Live' }, balls: [] } as any;
 
 beforeEach(() => {
+    sessionStorage.clear();
     vi.clearAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -198,7 +200,103 @@ describe('event cards', () => {
     });
 });
 
+describe('V1 scorebug animations', () => {
+    const frame = (type: 'FOUR' | 'SIX' | 'WICKET', id: string) => ({
+        ...live,
+        match: { id: '1', team1: 'A', team2: 'B', overs: 20 },
+        innings: { number: 1, battingTeam: 'A', bowlingTeam: 'B', runs: 4, wickets: 0, overs: '0.1', runRate: 24 },
+        scorecard: [], currentOver: [], lastBall: { id }, event: { type, ballId: id },
+    });
+    const clip = () => document.querySelector<HTMLVideoElement>('.event-animation');
+
+    beforeEach(() => {
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => resetAppStateForTests());
+
+    it('keeps fetching and rendering scores while playing, drops busy events and does not replay on recovery', async () => {
+        setSearch('?matchId=1&leagueId=42&view=scorebug');
+        vi.mocked(getMatchState).mockResolvedValue(frame('FOUR', '1'));
+        await updateScore();
+        const first = clip()!;
+        expect(first.dataset.type).toBe('four');
+        vi.mocked(getMatchState).mockResolvedValue(frame('SIX', '2'));
+        await updateScore();
+        expect(clip()).toBe(first);
+        expect(updateScoreboard).toHaveBeenCalledTimes(2);
+        expect(updateScoreboard).toHaveBeenLastCalledWith(expect.objectContaining({ event: { type: 'SIX', ballId: '2' } }));
+        first.dispatchEvent(new Event('ended'));
+        await updateScore();
+        expect(clip()).toBeNull();
+        vi.mocked(getMatchState).mockRejectedValueOnce(new Error('Offline'));
+        await updateScore();
+        vi.mocked(getMatchState).mockResolvedValue(frame('FOUR', '1'));
+        await updateScore();
+        expect(clip()).toBeNull();
+        vi.mocked(getMatchState).mockResolvedValue(frame('WICKET', '3'));
+        await updateScore();
+        expect(clip()!.dataset.type).toBe('wicket');
+        expect(getMatchState).toHaveBeenCalledTimes(6);
+        expect(updateScoreboard).toHaveBeenCalledTimes(5);
+    });
+
+    it('still paints the scoreboard after playback fails', async () => {
+        setSearch('?matchId=1');
+        vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(new Error('Unsupported media'));
+        vi.mocked(getMatchState).mockResolvedValue(frame('FOUR', '1'));
+        await updateScore();
+        expect(clip()).toBeNull();
+        expect(updateScoreboard).toHaveBeenCalledTimes(1);
+        await updateScore();
+        expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+        expect(updateScoreboard).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(['', '?matchId=1&view=scorecard', '?matchId=1&quiet'])('does not animate or handle hotkeys on %s', async search => {
+        setSearch(search);
+        vi.mocked(getMatchState).mockResolvedValue(frame('FOUR', '1'));
+        await updateScore();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: '4' }));
+        expect(clip()).toBeNull();
+        expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    });
+
+    it('supports hotkeys on the existing debug scorebug without network calls', async () => {
+        setSearch('?debug=1');
+        await updateScore();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
+        expect(clip()!.dataset.type).toBe('wicket');
+        expect(getMatchState).not.toHaveBeenCalled();
+    });
+});
+
 describe('updateScore error handling', () => {
+    it.each(['scorebug', 'scorecard'])('marks interrupted %s scores as stale and clears the warning on recovery', async view => {
+        setSearch(`?matchId=1&leagueId=league&view=${view}`);
+        const state = { ...live, match: { id: '1', team1: 'Team A', team2: 'Team B' }, innings: { number: 1 }, scorecard: [] } as any;
+        vi.mocked(getMatchState).mockResolvedValueOnce(state).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(state);
+        await updateScore();
+        const status = document.getElementById('overlay-connection-status')!;
+        expect(status.hidden).toBe(true);
+        await updateScore();
+        expect(status.hidden).toBe(false);
+        expect(status.textContent).toContain('showing last received score');
+        expect(status.classList.contains('for-scorecard')).toBe(view === 'scorecard');
+        await updateScore();
+        expect(status.hidden).toBe(true);
+        expect(overlay().hasAttribute('data-connection')).toBe(false);
+    });
+
+    it.each([400, 404])('shows actionable initial HTTP %i errors in the full scorecard view', async status => {
+        setSearch('?matchId=1&leagueId=league&view=scorecard');
+        vi.mocked(getMatchState).mockRejectedValue(Object.assign(new Error('failed'), { status }));
+        await updateScore();
+        expect(document.getElementById('overlay-connection-status')!.textContent).toContain('Check the match and league IDs');
+    });
+
     it('recovers after repeated proxy failures without erasing the last frame or replaying its event', async () => {
         setSearch('?matchId=1&leagueId=league');
         const frame = { ...live, lastBall: {id:'stable-ball'} };

@@ -2,6 +2,13 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { handleResolve } from './resolve';
 const request = (url: string) => new Request(`https://overlay.test/api/cricclubs/resolve?${new URLSearchParams({ url })}`);
 afterEach(() => vi.unstubAllGlobals());
+it('uses the Workers-supported manual redirect mode and never follows an upstream redirect', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response('', { status: 302, headers: { Location: 'https://untrusted.test' } }));
+    vi.stubGlobal('fetch', fetcher);
+    expect((await handleResolve(request('https://cricclubs.com/unknown/results/m'))).status).toBe(422);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0][1].redirect).toBe('manual');
+});
 it('does not mistake inherited object properties for verified league aliases', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('blocked', {status:403})));
     expect((await handleResolve(request('https://cricclubs.com/constructor/results/m'))).status).toBe(422);
